@@ -5,6 +5,7 @@ author        = "Jason Yip"
 description   = "MUS299 Spring 2024 Capstone Project"
 license       = "GPL-3.0-only"
 srcDir        = "src"
+binDir        = "bin"
 installExt    = @["nim"]
 bin           = @["mus299"]
 
