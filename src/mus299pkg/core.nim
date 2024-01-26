@@ -50,3 +50,10 @@ type
     availableTasks*: tables.CountTable[Task]
     performers*: OrderedSet[Performer]
     futures*: tables.Table[string, HashSet[Future[Task]]]
+
+proc `=destroy`(x: TaskObj) =
+  if x.folderPath.string != "":
+    removeDir(x.folderPath)
+
+  for field in x.fields:
+    `=destroy`(field.addr[])
