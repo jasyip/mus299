@@ -1,4 +1,6 @@
 when defined(release):
-  switch("define", "danger")
+  --define:danger
 else:
-  switch("debugger", "native")
+  --debugger:native
+
+--define:nimPreviewHashRef
