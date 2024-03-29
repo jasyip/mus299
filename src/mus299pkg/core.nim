@@ -58,7 +58,10 @@ type
 
 proc `=destroy`(x: TaskObj) =
   if x.folderPath.string != "":
-    removeDir(x.folderPath)
+    try:
+      removeDir(x.folderPath)
+    except OSError:
+      discard
 
   for field in x.fields:
     `=destroy`(field.addr[])
