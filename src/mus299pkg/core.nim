@@ -20,14 +20,20 @@ type
 # of categories on the frontend
 
 type
+
+  Category = distinct string
+
   # Duplicate tasks refer to the same object. The only mutable
   # attribute should be `performers`
   Task* = ref TaskObj
-  TaskObj* {.pure.} = object
+  TaskObj* = object
     folderPath*: Path  # lilypond source code
     performers*: OrderedSet[Hash]
-    allowedCategories*: HashSet[string]
-    children*: btrees.Table[Hash, HashSet[string]] # Key is `Rational`
+    allowedCategories*: HashSet[Category]
+    # Key is `Rational`, indicating that another task of the value category
+    # should be played at this metric position. The performer should be blocked
+    # until such a task can be retrieved
+    children*: btrees.Table[Hash, HashSet[Category]]
 
   # Only one exists
   TaskCopy* = ref object
@@ -42,13 +48,13 @@ type
     # the sequence can be appended to with the "secondary" task(s)
     currentTasks*: seq[Task]
     semitoneTranspose*: int8
-    categories*: HashSet[string]
   Performer* = ref PerformerObj
+    categories*: HashSet[Category]
 
   TaskPool* = object
     availableTasks*: tables.CountTable[Task]
     performers*: OrderedSet[Performer]
-    futures*: tables.Table[string, HashSet[Future[Task]]]
+    futures*: tables.Table[Category, HashSet[Future[Task]]]
 
 proc `=destroy`(x: TaskObj) =
   if x.folderPath.string != "":
