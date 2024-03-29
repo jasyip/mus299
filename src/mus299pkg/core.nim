@@ -28,7 +28,7 @@ type
   Task* = ref TaskObj
   TaskObj* = object
     folderPath*: Path  # lilypond source code
-    performers*: OrderedSet[Hash]
+    performers*: OrderedSet[Performer]
     allowedCategories*: HashSet[Category]
     # Key is `Rational`, indicating that another task of the value category
     # should be played at this metric position. The performer should be blocked
@@ -40,6 +40,7 @@ type
     lock*: Lock
     task*: Task
 
+  Performer* = ref PerformerObj
   # Duplicate performers are their own object
   PerformerObj* = object of RootObj
     state*: PerformerState = Ready
@@ -47,8 +48,7 @@ type
     # but when that task requires another task at a certain time,
     # the sequence can be appended to with the "secondary" task(s)
     currentTasks*: seq[Task]
-    semitoneTranspose*: int8
-  Performer* = ref PerformerObj
+    semitoneTranspose*: int
     categories*: HashSet[Category]
 
   TaskPool* = object
