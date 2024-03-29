@@ -2,8 +2,10 @@ import std/[paths, tempfiles]
 import std/strutils
 import std/sequtils
 import std/sets
+
 import core
 
+import chronos
 
 proc newTask*(lilypondSrc: string; categories: string): Task =
   var splitted = categories.split(",")

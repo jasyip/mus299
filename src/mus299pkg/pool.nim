@@ -1,5 +1,8 @@
-import std/asyncdispatch
 import std/[sets, tables]
+
+import chronos
+
+
 import core
 
 proc dec[A](t: var CountTable[A]; key: A; val = 1) =

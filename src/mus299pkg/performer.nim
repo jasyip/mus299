@@ -1,7 +1,8 @@
 import core
 import pool
 
-import std/asyncdispatch
+import chronos
+
 import std/[sets, tables]
 import std/sequtils
 
