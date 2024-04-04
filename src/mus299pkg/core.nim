@@ -37,7 +37,9 @@ type
     # should be played at this metric position. The performer should be blocked
     # until such a task can be retrieved
     children*: btrees.Table[Hash, HashSet[Category]]
-  TaskSnippetObj* = distinct Path
+  TaskSnippetObj* = object
+    path*: Path
+    snippet*: string
 
   # Only one exists
   TaskCopy* = ref object
@@ -63,11 +65,17 @@ type
     performers*: OrderedSet[Performer]
     futures*: tables.Table[Category, HashSet[Future[Task]]]
 
+func hash*(_: Category): Hash {.borrow.}
+func `==`*(_, _: Category): bool {.borrow.}
+
+  
+
 proc `=destroy`*(x: TaskSnippetObj) =
-  if x.string.len > 0:
+  if x.path.string.len > 0:
     try:
-      removeDir(x.Path)
+      removeDir(x.path)
     except OSError:
       discard
 
-  `=destroy`(x.string)
+  for f in x.fields:
+    `=destroy`(f.addr[])

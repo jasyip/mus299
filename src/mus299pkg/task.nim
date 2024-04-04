@@ -3,7 +3,6 @@ import std/[strutils, unicode]
 import std/sets
 import std/re
 import std/streams
-import std/os
 
 import chronos
 import chronos/asyncproc
@@ -12,54 +11,31 @@ import core
 
 
 
-
-proc readFileAsCString(x: Path): cstring =
-  let size = getFileSize(x.string).uint64
-  result = cast[cstring](createU(char, size + 1))
-  let f = open(x.string)
-  defer: f.close()
-  if readBuffer(f, result, size).uint < size:
-    raise OSError.newException("buffer reading failed")
-  result[size] = '\0'
-
-
-let
-  fileParent = instantiationInfo().filename.Path.parentDir()
-  sourceTemplate = readFileAsCString(fileParent / "template.ly".Path)
-  staffTemplate = readFileAsCString(fileParent / "staff.ly".Path)
-
-const
-  staffJoinStr = "\p"
-  varName = "task"
-  expressionRe = r"\s*(?:\\\w+\s*)*\{" 
-  isExpression = r"^" & expressionRe
-  isAssignment = r"^([a-z]+)\s*=" & expressionRe
-
-
-proc newTaskSnippet*(snippet: string;
-                     pool: TaskPool
-                    ): Future[TaskSnippet] {.async.} =
-  let workdir = createTempDir("mus299", "").Path
-
+proc resyncTaskSnippet*(snippet: TaskSnippet;
+                        pool: TaskPool;
+                        isExpression, isAssignment: Regex;
+                        staffJoinStr, varName,
+                        sourceTemplate, staffTemplate: string;
+                       ): Future[void] {.async.} =
   block:
-    let file = openFileStream(string(workdir / "source.ly".Path), fmWrite)
+    let file = openFileStream(string(snippet.path / "source.ly".Path), fmWrite)
     defer: file.close()
     file.write(sourceTemplate)
 
     file.write:
       # assume that snippet is already whitespace-stripped
-      if "\p" in snippet:
-        snippet
+      if "\p" in snippet.snippet:
+        snippet.snippet
       else:
         var matches: array[1, string]
-        if contains(snippet, re(isAssignment, {reIgnoreCase, reMultiLine}), matches):
+        if contains(snippet.snippet, isAssignment, matches):
           if matches[0] != varName:
-            varName & snippet[matches[0].len .. ^1]
+            varName & snippet.snippet[matches[0].len .. ^1]
           else:
             raise ValueError.newException("Unparseable")
         else:
-          varName & " = " & (if contains(snippet, re(isExpression, {reMultiLine})): snippet
-                             else: "{" & snippet & "}")
+          varName & " = " & (if contains(snippet.snippet, isExpression): snippet.snippet
+                             else: "{" & snippet.snippet & "}")
 
 
     for i, performer in pool.performers.pairs:
@@ -71,13 +47,21 @@ proc newTaskSnippet*(snippet: string;
         "staffPrefix", performer.staffPrefix,
       ))
 
-  let p = await startProcess("lilypond", workdir.string, @["source.ly"])
+  let p = await startProcess("lilypond", snippet.path.string, @["source.ly"])
   defer: await p.closeWait()
   if (await p.waitForExit(10 * Second)) != 0:
     raise OSError.newException("lilypond invocation failed")
 
-  new(result)
-  result[] = workdir.TaskSnippetObj
+
+proc newTaskSnippet*(snippet: string;
+                     pool: TaskPool;
+                     isExpression, isAssignment: Regex;
+                     staffJoinStr, varName,
+                     sourceTemplate, staffTemplate: string;
+                    ): Future[TaskSnippet] {.async.} =
+  result = TaskSnippet(path: createTempDir("mus299", "").Path, snippet: snippet)
+  await resyncTaskSnippet(result, pool, isExpression, isAssignment, staffJoinStr, varName, sourceTemplate, staffTemplate)
+
 
 
 
