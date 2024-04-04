@@ -21,19 +21,23 @@ type
 
 type
 
-  Category = distinct string
+  Category* = distinct string
 
   # Duplicate tasks refer to the same object. The only mutable
   # attribute should be `performers`
   Task* = ref TaskObj
+  TaskSnippet* = ref TaskSnippetObj
   TaskObj* = object
-    folderPath*: Path  # lilypond source code
-    performers*: OrderedSet[Performer]
+    snippet*: TaskSnippet
+    depends*: HashSet[Task]
+    dependents*: HashSet[Task]
     allowedCategories*: HashSet[Category]
+    performers*: OrderedSet[Performer]
     # Key is `Rational`, indicating that another task of the value category
     # should be played at this metric position. The performer should be blocked
     # until such a task can be retrieved
     children*: btrees.Table[Hash, HashSet[Category]]
+  TaskSnippetObj* = distinct Path
 
   # Only one exists
   TaskCopy* = ref object
@@ -48,20 +52,22 @@ type
     # but when that task requires another task at a certain time,
     # the sequence can be appended to with the "secondary" task(s)
     currentTasks*: seq[Task]
-    semitoneTranspose*: int
     categories*: HashSet[Category]
+    name*: string
+    staffPrefix*: string
+    semitoneTranspose*: int
+
 
   TaskPool* = object
     availableTasks*: tables.CountTable[Task]
     performers*: OrderedSet[Performer]
     futures*: tables.Table[Category, HashSet[Future[Task]]]
 
-proc `=destroy`(x: TaskObj) =
-  if x.folderPath.string != "":
+proc `=destroy`*(x: TaskSnippetObj) =
+  if x.string.len > 0:
     try:
-      removeDir(x.folderPath)
+      removeDir(x.Path)
     except OSError:
       discard
 
-  for field in x.fields:
-    `=destroy`(field.addr[])
+  `=destroy`(x.string)
