@@ -47,7 +47,8 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
         "staffPrefix", performer.instrument.staffPrefix,
       ))
 
-  let p = await startProcess("lilypond", snippet.path.string, @["source.ly"])
+  const args = @["--svg", "source.ly", when defined(release): "-lDEBUG" else: "-s"]
+  let p = await startProcess("lilypond", snippet.path.string, args)
   defer: await p.closeWait()
   if (await p.waitForExit(10 * Second)) != 0:
     raise OSError.newException("lilypond invocation failed")
