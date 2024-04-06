@@ -1,23 +1,20 @@
-import std/rationals
-
 import std/[paths, dirs]
 
 import std/[hashes, sets, tables]
-import fusion/btreetables as btrees
-
-import std/locks
 
 
 import chronos
+
+
+
+
+
 
 type
   PerformerState* = enum
     Ready
     Performing
     Blocking
-
-# OrderedSet is used so that it is easier to visualize the management
-# of categories on the frontend
 
 type
 
@@ -33,18 +30,13 @@ type
     dependents*: HashSet[Task]
     allowedCategories*: HashSet[Category]
     performers*: OrderedSet[Performer]
-    # Key is `Rational`, indicating that another task of the value category
-    # should be played at this metric position. The performer should be blocked
-    # until such a task can be retrieved
-    children*: btrees.Table[Hash, HashSet[Category]]
+    # Another task of the value category should be played at the metric position
+    # represented by the key. The performer should be blocked until such a task
+    # can be retrieved
+    children*: Table[Duration, HashSet[Category]]
   TaskSnippetObj* = object
     path*: Path
     snippet*: string
-
-  # Only one exists
-  TaskCopy* = ref object
-    lock*: Lock
-    task*: Task
 
   Performer* = ref PerformerObj
   # Duplicate performers are their own object
@@ -56,19 +48,22 @@ type
     currentTasks*: seq[Task]
     categories*: HashSet[Category]
     name*: string
+    instrument*: Instrument
+
+  Instrument* = ref object
     staffPrefix*: string
-    semitoneTranspose*: int
+    semitoneTranspose*: range[-127..127]
 
 
   TaskPool* = object
-    availableTasks*: tables.CountTable[Task]
+    availableTasks*: CountTable[Task]
     performers*: OrderedSet[Performer]
-    futures*: tables.Table[Category, HashSet[Future[Task]]]
+    futures*: Table[Category, HashSet[Future[Task]]]
 
 func hash*(_: Category): Hash {.borrow.}
 func `==`*(_, _: Category): bool {.borrow.}
 
-  
+
 
 proc `=destroy`*(x: TaskSnippetObj) =
   if x.path.string.len > 0:

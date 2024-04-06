@@ -44,7 +44,7 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
       file.write(format($staffTemplate,
         "instrumentName", title(performer.name),
         "midiInstrument", performer.name,
-        "staffPrefix", performer.staffPrefix,
+        "staffPrefix", performer.instrument.staffPrefix,
       ))
 
   let p = await startProcess("lilypond", snippet.path.string, @["source.ly"])

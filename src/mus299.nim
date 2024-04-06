@@ -1,8 +1,7 @@
-import mus299pkg/[core, task]
+import mus299pkg/[core, task, performer]
 import std/appdirs
 import std/re
 import std/paths
-
 
 
 
@@ -12,6 +11,10 @@ const
   expressionRe = r"\s*(?:\\\w+\s*)*\{" 
 
   dataDir = getDataDir() / "mus299".Path
+
+  fluidsynth = "fluidsynth"
+  # audio drivers alsa, pulseaudio and sdl2 allow concurrent
+  fluidsynthParams = @["-i", "-l", "/usr/share/soundfonts/freepats-general-midi.sf2"]
 
 
 let
