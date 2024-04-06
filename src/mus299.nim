@@ -1,4 +1,4 @@
-import mus299pkg/[core, task, performer]
+import mus299pkg/[core, task, pool, performer]
 import std/appdirs
 import std/re
 import std/paths

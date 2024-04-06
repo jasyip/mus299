@@ -28,19 +28,34 @@ proc addTask(pool: var TaskPool; task: Task; val = 1) =
     pool.availableTasks.inc(task, val)
 
 
-proc popTask*(pool: var TaskPool; categories: SomeSet[string]): Future[Task] {.async.} =
-  let acceptableTask = (if categories.len > 0:
-      (proc (task: Task): bool = not task.allowedCategories.disjoint(categories))
-      else: (proc (_: Task): bool = true))
-  for task in pool.availableTasks.keys:
-    if acceptableTask(task):
-      pool.availableTasks.dec(task)
-      return task
+proc popTask*(pool: var TaskPool; categories: SomeSet[Category]): Future[Task] {.async: (raw: true).} =
+  result = newFuture[Task]("popTask")
+  try:
+    let isAcceptable = (
+        if categories.len > 0: (proc (task: Task): bool =
+                                not task.allowedCategories.disjoint(categories))
+        else: (proc (_: Task): bool = true))
 
-  var newFuture = newFuture[Task]("popTask")
-  for category in categories.items:
-    pool.futures.mgetOrPut(category, initHashSet[Future[Task]]()).incl(newFuture)
+    for task in pool.availableTasks.keys:
+      if isAcceptable(task):
+        pool.availableTasks.dec(task)
+        result.complete(task)
+        return
 
-  await newFuture
+    # no acceptable tasks
+    for category in categories.items:
+      pool.futures.mgetOrPut(category, HashSet[Future[Task]].default).incl(result)
+
+  except CatchableError as e:
+    result.fail(e)
+    for category in categories.items:
+      try:
+        pool.futures[category].excl(result)
+      except KeyError:
+        discard
 
 
+func validPerformers*(pool: TaskPool, task: Task): seq[Performer] =
+  for performer in pool.performers.items:
+    if not performer.categories.disjoint(task.allowedCategories):
+      result.add(performer)
