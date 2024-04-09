@@ -208,8 +208,9 @@ proc perform*(performer: Performer; pool: TaskPool;
   block:
     let playerProc = await startProcess(player, task.snippet.path.string,
                                         concat(playerParams,
-                                               @[&"output-{performer.name}.mid"]
-                                              )
+                                               @[&"source-{performer.name}.midi"]
+                                              ),
+                                        options={UsePath}
                                        )
     defer: await playerProc.closeWait()
     var
@@ -228,10 +229,13 @@ proc perform*(performer: Performer; pool: TaskPool;
         suspended = true
       performer.state = Blocking
       await perform(performer, pool, player, playerParams, afterPop, childCategories)
-      performer.state = Performing
 
     if suspended:
       playerProc.resume.tryGet()
+
+    let code = await playerProc.waitForExit()
+    if code != 0:
+      raise OSError.newException(&"lilypond return code was {code}")
 
   performer.state = Ready
   for t in task.dependents:
