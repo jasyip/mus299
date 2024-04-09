@@ -49,7 +49,7 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
         "staffPrefix", performer.instrument.staffPrefix,
       ))
 
-  const args = @["--svg", "-s", "source.ly"]
+  const args = @["--svg", "-s", "-dno-print-pages", "-dcrop", "source.ly"]
   let p = await startProcess("lilypond", snippet.path.string, args, options={UsePath})
   defer: await p.closeWait()
   if (await p.waitForExit(10 * Second)) != 0:
@@ -62,7 +62,7 @@ proc newTaskSnippet*(snippet: string;
                      staffJoinStr, varName,
                      sourceTemplate, staffTemplate: string;
                     ): Future[TaskSnippet] {.async.} =
-  result = TaskSnippet(path: createTempDir("mus299", "").Path, snippet: snippet)
+  result = TaskSnippet(path: createTempDir("mus299-", "").Path, snippet: snippet)
   await resyncTaskSnippet(result, pool, isExpression, isAssignment, staffJoinStr, varName, sourceTemplate, staffTemplate)
 
 
