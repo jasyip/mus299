@@ -173,18 +173,17 @@ const
   ])
 
 
-proc newInstrument*(staffPrefix: string; semitoneTranspose: range[-127..127]): Instrument =
-  let titleStaffPrefix = staffPrefix.toLowerAscii().capitalizeAscii()
-  if titleStaffPrefix notin staffPrefixes:
-    raise ValueError.newException("unsupported staff prefix")
-  Instrument(staffPrefix: titleStaffPrefix, semitoneTranspose: semitoneTranspose)
+proc newInstrument*(name: string; staffPrefix: string; semitoneTranspose: range[-127..127]): Instrument =
+  let
+    lowerName = name.toLowerAscii()
+    titleStaffPrefix = staffPrefix.toLowerAscii().capitalizeAscii()
 
-proc newPerformer*(categories: HashSet[Category]; name: string; instrument: Instrument): Performer =
-  assert not instrument.isNil
-  let lowerName = name.toLowerAscii()
   if lowerName notin instrumentNames:
     raise ValueError.newException("name must be actual MIDI instrument")
-  Performer(categories: categories, name: lowerName, instrument: instrument)
+  if titleStaffPrefix notin staffPrefixes:
+    raise ValueError.newException("unsupported staff prefix")
+
+  Instrument(name:lowerName, staffPrefix: titleStaffPrefix, semitoneTranspose: semitoneTranspose)
 
 proc dec[A](t: var CountTable[A]; key: A; val = 1) =
   if val > 0:

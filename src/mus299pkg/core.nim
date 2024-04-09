@@ -51,6 +51,7 @@ type
     instrument*: Instrument
 
   Instrument* = ref object
+    name*: string
     staffPrefix*: string
     semitoneTranspose*: range[-127..127]
 

@@ -1,5 +1,5 @@
 import std/[paths, tempfiles]
-import std/[strutils, unicode]
+import std/strutils
 import std/sets
 import std/re
 import std/streams
@@ -43,8 +43,8 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
       if i > 0:
         file.write(staffJoinStr)
       file.write(format($staffTemplate,
-        "instrumentName", title(performer.name),
-        "midiInstrument", performer.name,
+        "instrumentName", performer.name,
+        "midiInstrument", performer.instrument.name,
         "staffPrefix", performer.instrument.staffPrefix,
       ))
 
