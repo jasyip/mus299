@@ -185,26 +185,23 @@ proc newInstrument*(name: string; staffPrefix: string; semitoneTranspose: range[
 
   Instrument(name:lowerName, staffPrefix: titleStaffPrefix, semitoneTranspose: semitoneTranspose)
 
-proc dec[A](t: var CountTable[A]; key: A; val = 1) =
-  if val > 0:
-    assert t.getOrDefault(key) >= val
-  t.inc(key, -val)
-
 proc perform*(performer: var PerformerObj; pool: var TaskPool;
               categories: HashSet[Category];
               player: string; playerParams: seq[string]) {.async.} =
   assert performer.state != Performing
   let task = await pool.popTask(categories)
+
+  #[
   assert anyIt({
-      performer.categories: false,
+      categories: false,
       task.allowedCategories: false,
-      performer.categories * task.allowedCategories: true,
+      categories * task.allowedCategories: true,
       }, (it[0].len > 0) == it[1])
+  ]#
+
   performer.state = Performing
   performer.currentTasks.add(task)
-  pool.availableTasks.dec(task)
-
-  block: 
+  block:
     let playerProc = await startProcess(player, task.snippet.path.string,
                                         concat(playerParams,
                                                @[&"output-{performer.name}.mid"]
@@ -235,4 +232,4 @@ proc perform*(performer: var PerformerObj; pool: var TaskPool;
   performer.state = Ready
   for t in task.dependents:
     t.depends.excl(task)
-    pool.availableTasks.inc(t)
+    pool.addTask(t)

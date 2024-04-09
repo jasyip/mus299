@@ -1,6 +1,7 @@
 import std/[paths, dirs]
 
-import std/[hashes, sets, tables]
+import std/[hashes, sets]
+import std/tables
 
 
 import chronos
@@ -56,10 +57,12 @@ type
     semitoneTranspose*: range[-127..127]
 
 
-  TaskPool* = object
-    availableTasks*: CountTable[Task]
+  TaskPool* = ref TaskPoolObj
+  TaskPoolObj* = object
     performers*: OrderedSet[Performer]
-    futures*: Table[Category, HashSet[Future[Task]]]
+    getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
+    pool*: Table[Category, HashSet[Task]]
+
 
 func hash*(_: Category): Hash {.borrow.}
 func `==`*(_, _: Category): bool {.borrow.}
