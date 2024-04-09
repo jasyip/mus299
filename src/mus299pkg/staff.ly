@@ -8,5 +8,9 @@
       \task
     }
     \midi {}
+    \layout {}
+    \header {
+      tagline = ##f
+    }
   }
 }

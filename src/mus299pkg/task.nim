@@ -40,6 +40,7 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
 
 
     for i, performer in pool.performers.pairs:
+      file.write("\p")
       if i > 0:
         file.write(staffJoinStr)
       file.write(format($staffTemplate,
@@ -48,8 +49,9 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
         "staffPrefix", performer.instrument.staffPrefix,
       ))
 
-  const args = @["--svg", "source.ly", when defined(release): "-lDEBUG" else: "-s"]
-  let p = await startProcess("lilypond", snippet.path.string, args)
+  echo snippet.path.string
+  const args = @["--svg", "-s", "source.ly"]
+  let p = await startProcess("lilypond", snippet.path.string, args, options={UsePath})
   defer: await p.closeWait()
   if (await p.waitForExit(10 * Second)) != 0:
     raise OSError.newException("lilypond invocation failed")
