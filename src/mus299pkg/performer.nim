@@ -185,11 +185,15 @@ proc newInstrument*(name: string; staffPrefix: string; semitoneTranspose: range[
 
   Instrument(name:lowerName, staffPrefix: titleStaffPrefix, semitoneTranspose: semitoneTranspose)
 
-proc perform*(performer: var PerformerObj; pool: var TaskPool;
-              categories: HashSet[Category];
-              player: string; playerParams: seq[string]) {.async.} =
+proc perform*(performer: Performer; pool: TaskPool;
+              player: string; playerParams: seq[string];
+              afterPop: proc(x: Task): Future[void] {.gcsafe, raises: [].} = nil;
+              categories: HashSet[Category] = performer.categories) {.async.} =
   assert performer.state != Performing
   let task = await pool.popTask(categories)
+
+  if not afterPop.isNil():
+    await afterPop(task)
 
   #[
   assert anyIt({
@@ -223,7 +227,7 @@ proc perform*(performer: var PerformerObj; pool: var TaskPool;
         playerProc.suspend.tryGet()
         suspended = true
       performer.state = Blocking
-      await perform(performer, pool, childCategories, player, playerParams)
+      await perform(performer, pool, player, playerParams, afterPop, childCategories)
       performer.state = Performing
 
     if suspended:
@@ -233,3 +237,11 @@ proc perform*(performer: var PerformerObj; pool: var TaskPool;
   for t in task.dependents:
     t.depends.excl(task)
     pool.addTask(t)
+
+proc perform*(performer: Performer; pool: TaskPool;
+              player: string; playerParams: seq[string];
+              afterPop: proc(x: Task) {.gcsafe, raises: [].};
+              categories: HashSet[Category] = performer.categories) {.async: (raw: true).} =
+  proc asyncAfterPop(x: Task) {.async.} =
+    afterPop(x)
+  perform(performer, pool, player, playerParams, asyncAfterPop, categories)
