@@ -17,7 +17,7 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
                         isExpression, isAssignment: Regex;
                         staffJoinStr, varName,
                         sourceTemplate, staffTemplate: string;
-                       ): Future[void] {.async.} =
+                       ) {.async.} =
   block:
     let file = openFileStream(string(snippet.path / "source.ly".Path), fmWrite)
     defer: file.close()
@@ -49,7 +49,6 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
         "staffPrefix", performer.instrument.staffPrefix,
       ))
 
-  echo snippet.path.string
   const args = @["--svg", "-s", "source.ly"]
   let p = await startProcess("lilypond", snippet.path.string, args, options={UsePath})
   defer: await p.closeWait()
