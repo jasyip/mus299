@@ -3,6 +3,7 @@ import std/appdirs
 import std/re
 import std/paths
 import std/sets
+import std/strutils
 import std/random
 
 import chronos
@@ -40,7 +41,7 @@ proc main {.async.} =
     performer = Performer(categories: brass, name: "Trumpet", instrument: instrument)
   pool.performers.incl(performer)
   var
-    task = Task(snippet: (await newTaskSnippet("a b c d", pool, isExpression, isAssignment, staffJoinStr, varName, sourceTemplate, staffTemplate)), allowedCategories: brass)
+    task = Task(snippet: (await newTaskSnippet(repeat("a' b' c'' d' ", 30), pool, isExpression, isAssignment, staffJoinStr, varName, sourceTemplate, staffTemplate)), allowedCategories: brass)
 
   pool.addTask(task)
   await performer.perform(pool, player, playerParams) do (x: Task):

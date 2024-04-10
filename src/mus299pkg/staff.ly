@@ -5,10 +5,13 @@
       instrumentName = #"$instrumentName"
       midiInstrument = #"$midiInstrument"
     } {
+      \autoLineBreaksOff
       \task
     }
     \midi {}
-    \layout {}
+    \layout {
+      ragged-right = ##t
+    }
     \header {
       tagline = ##f
     }
