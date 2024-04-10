@@ -41,11 +41,19 @@ proc main {.async.} =
     performer = Performer(categories: brass, name: "Trumpet", instrument: instrument)
   pool.performers.incl(performer)
   var
-    task = Task(snippet: (await newTaskSnippet(repeat("a' b' c'' d' ", 30), pool, isExpression, isAssignment, staffJoinStr, varName, sourceTemplate, staffTemplate)), allowedCategories: brass)
+    task1 = Task(snippet: (await newTaskSnippet("a' b' c'' d''", pool, isExpression, isAssignment, staffJoinStr, varName, sourceTemplate, staffTemplate)), allowedCategories: brass)
+    task2 = Task(snippet: (await newTaskSnippet("a b c' d'", pool, isExpression, isAssignment, staffJoinStr, varName, sourceTemplate, staffTemplate)), allowedCategories: brass)
+    task3, task4 = new(Task)
 
-  pool.addTask(task)
-  await performer.perform(pool, player, playerParams) do (x: Task):
-    echo x.repr
+  task3[] = task1[]
+  task4[] = task2[]
+  pool.addTask(task1)
+  pool.addTask(task3)
+  pool.addTask(task2)
+  pool.addTask(task4)
+  for i in 0..<4:
+    await performer.perform(pool, player, playerParams) do (x: Task):
+      echo x.repr
   
 when isMainModule:
   waitFor main()
