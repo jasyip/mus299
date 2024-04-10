@@ -38,6 +38,7 @@ type
   TaskSnippetObj* = object
     path*: Path
     snippet*: string
+    key* = "c"
 
   Performer* = ref PerformerObj
   # Duplicate performers are their own object
@@ -50,6 +51,7 @@ type
     categories*: HashSet[Category]
     name*: string
     instrument*: Instrument
+    key*, clef* = ""
 
   Instrument* = ref object
     name*: string
@@ -62,6 +64,7 @@ type
     performers*: OrderedSet[Performer]
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
     pool*: Table[Category, HashSet[Task]]
+    tempo*, timeSig* = ""
 
 
 func hash*(_: Category): Hash {.borrow.}

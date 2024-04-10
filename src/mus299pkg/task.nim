@@ -9,6 +9,7 @@ import chronos
 import chronos/asyncproc
 
 import core
+import performer
 
 
 
@@ -38,15 +39,32 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
           varName & " = " & (if contains(snippet.snippet, isExpression): snippet.snippet
                              else: "{" & snippet.snippet & "}")
 
+    var taskExpr = ""
+    if pool.tempo != "":
+      taskExpr.add(r"\set Score.tempoHideNote = ##t ")
+      taskExpr.add(r"\tempo " & pool.tempo & " ")
+    if pool.timeSig != "":
+      taskExpr.add(r"\time " & pool.timeSig & " ")
+    taskExpr.add(r"\task")
 
     for i, performer in pool.performers.pairs:
       file.write("\p")
       if i > 0:
         file.write(staffJoinStr)
+
+      const newLine = "\p" & repeat(' ', 6)
+
+      var specificTaskExpr = ""
+      if performer.clef != "":
+        specificTaskExpr.add(r"\clef " & performer.clef & newLine)
+      if performer.key != "":
+        specificTaskExpr.add(r"\key " & performer.key & newLine)
+        specificTaskExpr.add(r"\transpose " & snippet.key & " " & transposeKey(performer[]) & " ")
       file.write(format($staffTemplate,
         "instrumentName", performer.name,
         "midiInstrument", performer.instrument.name,
         "staffPrefix", performer.instrument.staffPrefix,
+        "task", specificTaskExpr & taskExpr
       ))
 
   const args = @["--svg", "-s", "-dno-print-pages", "-dcrop", "source.ly"]

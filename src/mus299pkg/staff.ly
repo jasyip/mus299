@@ -6,7 +6,7 @@
       midiInstrument = #"$midiInstrument"
     } {
       \autoLineBreaksOff
-      \task
+      $task
     }
     \midi {}
     \layout {

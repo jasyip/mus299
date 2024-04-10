@@ -249,3 +249,7 @@ proc perform*(performer: Performer; pool: TaskPool;
   proc asyncAfterPop(x: Task) {.async.} =
     afterPop(x)
   perform(performer, pool, player, playerParams, asyncAfterPop, categories)
+
+proc transposeKey*(performer: PerformerObj): string =
+  let l = performer.key.len + 1
+  performer.key[0..<((performer.key.find(' ') + l) mod l)]
