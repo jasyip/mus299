@@ -195,14 +195,6 @@ proc perform*(performer: Performer; pool: TaskPool;
   if not afterPop.isNil():
     await afterPop(task)
 
-  #[
-  assert anyIt({
-      categories: false,
-      task.allowedCategories: false,
-      categories * task.allowedCategories: true,
-      }, (it[0].len > 0) == it[1])
-  ]#
-
   performer.state = Performing
   performer.currentTasks.add(task)
   block:
