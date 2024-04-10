@@ -1,7 +1,7 @@
 import std/[sets, tables]
 import std/random
-import std/sugar
-import std/sequtils
+from std/sugar import collect
+import std/enumerate
 import std/options
 
 import chronos
@@ -95,9 +95,12 @@ proc randomItem[T](pool: var Table[Category, HashSet[T]];
       possible.incl(entry[])
 
   if possible.len > 0:
-    possible.toSeq.sample.some()
+    let chosen = rand(possible.len - 1)
+    for i, item in enumerate(possible.items):
+      if i == chosen:
+        return item.some()
   else:
-    none(T)
+    return none(T)
 
 
 proc wakeupNext(pool: TaskPool; categories: HashSet[Category]) {.raises: [].} =
