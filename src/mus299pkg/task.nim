@@ -68,7 +68,11 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
       ))
 
   const args = @["--svg", "-s", "-dno-print-pages", "-dcrop", "source.ly"]
-  let p = await startProcess("lilypond", snippet.path.string, args, options={UsePath})
+  let p = await startProcess("lilypond",
+                             snippet.path.string,
+                             args,
+                             options = {UsePath}
+                            )
   defer: await p.closeWait()
   if (await p.waitForExit(10 * Second)) != 0:
     raise OSError.newException("lilypond invocation failed")
@@ -81,10 +85,18 @@ proc newTaskSnippet*(snippet: string;
                      sourceTemplate, staffTemplate: string;
                     ): Future[TaskSnippet] {.async.} =
   result = TaskSnippet(path: createTempDir("mus299-", "").Path, snippet: snippet)
-  await resyncTaskSnippet(result, pool, isExpression, isAssignment, staffJoinStr, varName, sourceTemplate, staffTemplate)
+  await resyncTaskSnippet(result,
+                          pool,
+                          isExpression,
+                          isAssignment,
+                          staffJoinStr,
+                          varName,
+                          sourceTemplate,
+                          staffTemplate
+                         )
 
 
-proc changeDependencies*(task: Task, newDepends: HashSet[Task]) =
+func changeDependencies*(task: Task; newDepends: HashSet[Task]) =
   let e = ValueError.newException("task dependency cycle detected")
   if task in newDepends:
     raise e

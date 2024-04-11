@@ -8,9 +8,9 @@ import chronos
 import core
 
 
-proc wouldWait[T](pool: var Table[Category, HashSet[T]];
+func wouldWait[T](pool: var Table[Category, HashSet[T]];
                   categories: HashSet[Category];
-                  delete: proc(x: T): bool {.noSideEffect, closure, raises: [].} = nil
+                  delete: proc(x: T): bool {.noSideEffect, raises: [].} = nil
                  ): bool {.raises: [].} =
   for category in categories.items:
     pool.withValue(category, entry):
@@ -47,7 +47,9 @@ proc randomItem[T](pool: var Table[Category, HashSet[T]];
 
 
 proc wakeupNext(pool: TaskPool; categories: HashSet[Category]) {.raises: [].} =
-  if not (wouldWait(pool.getters, categories) do (x: Future[void].Raising([CancelledError])) -> bool: x.finished()):
+  if not (wouldWait(pool.getters, categories) do (x: Future[void].Raising([CancelledError])) -> bool:
+            x.finished()
+         ):
     randomItem(pool.getters, categories).complete()
 
 
@@ -57,7 +59,10 @@ proc addTask*(pool: TaskPool; task: Task) =
     pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
   pool.wakeupNext(task.allowedCategories)
 
-proc popTask*(pool: TaskPool; categories: HashSet[Category]; performer: Performer): Future[Task] {.async: (raises: [CancelledError]).} =
+proc popTask*(pool: TaskPool;
+              categories: HashSet[Category];
+              performer: Performer
+             ): Future[Task] {.async: (raises: [CancelledError]).} =
 
   proc reincarnate =
     pool.toReincarnate.withValue(performer, entry):
@@ -72,7 +77,9 @@ proc popTask*(pool: TaskPool; categories: HashSet[Category]; performer: Performe
 
     let getter = Future[void].Raising([CancelledError]).init("TaskPool.addTask")
     for category in categories.items:
-      pool.getters.mgetOrPut(category, HashSet[Future[void].Raising([CancelledError])].default).incl(getter)
+      pool.getters.mgetOrPut(category,
+                             HashSet[Future[void].Raising([CancelledError])].default
+                            ).incl(getter)
 
     reincarnate()
 

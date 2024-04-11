@@ -173,7 +173,10 @@ const
   ])
 
 
-proc newInstrument*(name: string; staffPrefix: string; semitoneTranspose: range[-127..127]): Instrument =
+func newInstrument*(name: string;
+                    staffPrefix: string;
+                    semitoneTranspose: range[-127..127];
+                   ): Instrument =
   let
     lowerName = name.toLowerAscii()
     titleStaffPrefix = staffPrefix.toLowerAscii().capitalizeAscii()
@@ -183,12 +186,17 @@ proc newInstrument*(name: string; staffPrefix: string; semitoneTranspose: range[
   if titleStaffPrefix notin staffPrefixes:
     raise ValueError.newException("unsupported staff prefix")
 
-  Instrument(name:lowerName, staffPrefix: titleStaffPrefix, semitoneTranspose: semitoneTranspose)
+  Instrument(name: lowerName,
+             staffPrefix: titleStaffPrefix,
+             semitoneTranspose: semitoneTranspose,
+            )
 
 
 proc perform*(performer: Performer; pool: TaskPool;
               player: string; playerParams: seq[string];
-              afterPop: proc(x: Task) {.gcsafe, raises: [].} = (proc (_: Task) = discard);
+              afterPop: proc(x: Task) {.gcsafe, raises: [].} = (proc (_: Task) =
+                                                                  discard
+                                                               );
              ) {.async.} =
   assert not performer.performing
   let task = await pool.popTask(performer.categories, performer)
@@ -200,7 +208,7 @@ proc perform*(performer: Performer; pool: TaskPool;
                                         concat(playerParams,
                                                @[&"source-{performer.name}.midi"]
                                               ),
-                                        options={UsePath}
+                                        options = {UsePath}
                                        )
     defer: await playerProc.closeWait()
     let code = await playerProc.waitForExit()
@@ -210,6 +218,6 @@ proc perform*(performer: Performer; pool: TaskPool;
   performer.performing = false
 
 
-proc transposeKey*(performer: PerformerObj): string =
+func transposeKey*(performer: PerformerObj): string =
   let l = performer.key.len + 1
   performer.key[0..<((performer.key.find(' ') + l) mod l)]
