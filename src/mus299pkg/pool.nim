@@ -52,6 +52,7 @@ proc wakeupNext(pool: TaskPool; categories: HashSet[Category]) {.raises: [].} =
 
 
 proc addTask*(pool: TaskPool; task: Task) =
+  task.readyDepends = task.depends.len.uint
   for category in task.allowedCategories.items:
     pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
   pool.wakeupNext(task.allowedCategories)
@@ -97,3 +98,23 @@ proc popTask*(pool: TaskPool; categories: HashSet[Category]; performer: Performe
       taskSet[].excl(result)
 
   pool.toReincarnate[performer] = result
+
+
+proc resetTaskPool*(pool: TaskPool; starting: HashSet[Task]) =
+  pool.pool.clear()
+  pool.toReincarnate.clear()
+  var stack: seq[Task]
+  for task in starting.items:
+    task.readyDepends = 0
+    for t in task.dependents.items:
+      stack.add(t)
+
+  while stack.len > 0:
+    let cur = stack.pop()
+    if cur.readyDepends > 0:
+      cur.readyDepends = 0
+      for t in cur.dependents.items:
+        stack.add(t)
+
+  for task in starting.items:
+    pool.addTask(task)

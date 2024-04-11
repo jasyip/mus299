@@ -116,13 +116,3 @@ template newTask*(snippet: TaskSnippet; args: varargs[typed]): Task =
 
   for parent in result.depends:
     parent.dependents.incl(result)
-
-
-proc resetTracking*(roots: HashSet[Task]) =
-  var stack = toSeq(roots)
-  while stack.len > 0:
-    let cur = stack.pop()
-    if cur.readyDepends == cur.depends.len.uint:
-      cur.readyDepends = 0
-      for t in cur.dependents.items:
-        stack.add t
