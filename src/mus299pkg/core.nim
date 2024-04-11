@@ -23,6 +23,7 @@ type
   TaskObj* = object
     snippet*: TaskSnippet
     depends*, dependents*: HashSet[Task]
+    readyDepends*: uint = 0
     allowedCategories*: HashSet[Category]
     performers*: OrderedSet[Performer]
   TaskSnippetObj* = object

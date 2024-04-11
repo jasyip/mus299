@@ -61,8 +61,9 @@ proc popTask*(pool: TaskPool; categories: HashSet[Category]; performer: Performe
   proc reincarnate =
     pool.toReincarnate.withValue(performer, entry):
       for t in entry[].dependents.items:
-        t.dependents.excl(entry[])
-        pool.addTask(t)
+        t.readyDepends.inc
+        if t.readyDepends == t.depends.len.uint:
+          pool.addTask(t)
       pool.toReincarnate.del(performer)
 
 
