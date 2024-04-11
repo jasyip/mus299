@@ -11,11 +11,6 @@ import chronos
 
 
 
-type
-  PerformerState* = enum
-    Ready
-    Performing
-    Blocking
 
 type
 
@@ -27,14 +22,9 @@ type
   TaskSnippet* = ref TaskSnippetObj
   TaskObj* = object
     snippet*: TaskSnippet
-    depends*: HashSet[Task]
-    dependents*: HashSet[Task]
+    depends*, dependents*: HashSet[Task]
     allowedCategories*: HashSet[Category]
     performers*: OrderedSet[Performer]
-    # Another task of the value category should be played at the metric position
-    # represented by the key. The performer should be blocked until such a task
-    # can be retrieved
-    children*: Table[Duration, HashSet[Category]]
   TaskSnippetObj* = object
     path*: Path
     snippet*: string
@@ -43,11 +33,10 @@ type
   Performer* = ref PerformerObj
   # Duplicate performers are their own object
   PerformerObj* = object of RootObj
-    state*: PerformerState = Ready
+    performing* = false
     # When performing, the size of this should be just 1
     # but when that task requires another task at a certain time,
     # the sequence can be appended to with the "secondary" task(s)
-    currentTasks*: seq[Task]
     categories*: HashSet[Category]
     name*: string
     instrument*: Instrument
@@ -64,6 +53,7 @@ type
     performers*: OrderedSet[Performer]
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
     pool*: Table[Category, HashSet[Task]]
+    toReincarnate*: Table[Performer, Task]
     tempo*, timeSig* = ""
 
 

@@ -1,4 +1,4 @@
-import std/[sets, tables]
+import std/sets
 import std/sequtils
 import std/strutils
 import std/strformat
@@ -185,18 +185,16 @@ proc newInstrument*(name: string; staffPrefix: string; semitoneTranspose: range[
 
   Instrument(name:lowerName, staffPrefix: titleStaffPrefix, semitoneTranspose: semitoneTranspose)
 
+
 proc perform*(performer: Performer; pool: TaskPool;
               player: string; playerParams: seq[string];
-              afterPop: proc(x: Task): Future[void] {.gcsafe, raises: [].} = nil;
-              categories: HashSet[Category] = performer.categories) {.async.} =
-  assert performer.state != Performing
-  let task = await pool.popTask(categories)
+              afterPop: proc(x: Task) {.gcsafe, raises: [].} = (proc (_: Task) = discard);
+             ) {.async.} =
+  assert not performer.performing
+  let task = await pool.popTask(performer.categories, performer)
+  afterPop(task)
 
-  if not afterPop.isNil():
-    await afterPop(task)
-
-  performer.state = Performing
-  performer.currentTasks.add(task)
+  performer.performing = true
   block:
     let playerProc = await startProcess(player, task.snippet.path.string,
                                         concat(playerParams,
@@ -205,42 +203,12 @@ proc perform*(performer: Performer; pool: TaskPool;
                                         options={UsePath}
                                        )
     defer: await playerProc.closeWait()
-    var
-      accumulatingOffset = nanoseconds(0)
-      suspended = false
-
-    for offset, childCategories in task.children.pairs:
-      if accumulatingOffset < offset:
-        if suspended:
-          playerProc.resume.tryGet()
-          suspended = false
-        await sleepAsync(offset - accumulatingOffset)
-        accumulatingOffset = offset
-      if not suspended:
-        playerProc.suspend.tryGet()
-        suspended = true
-      performer.state = Blocking
-      await perform(performer, pool, player, playerParams, afterPop, childCategories)
-
-    if suspended:
-      playerProc.resume.tryGet()
-
     let code = await playerProc.waitForExit()
     if code != 0:
-      raise OSError.newException(&"lilypond return code was {code}")
+      raise OSError.newException(&"MIDI player return code was {code}")
 
-  performer.state = Ready
-  for t in task.dependents:
-    t.depends.excl(task)
-    pool.addTask(t)
+  performer.performing = false
 
-proc perform*(performer: Performer; pool: TaskPool;
-              player: string; playerParams: seq[string];
-              afterPop: proc(x: Task) {.gcsafe, raises: [].};
-              categories: HashSet[Category] = performer.categories) {.async: (raw: true).} =
-  proc asyncAfterPop(x: Task) {.async.} =
-    afterPop(x)
-  perform(performer, pool, player, playerParams, asyncAfterPop, categories)
 
 proc transposeKey*(performer: PerformerObj): string =
   let l = performer.key.len + 1

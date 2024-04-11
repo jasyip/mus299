@@ -52,7 +52,7 @@ proc addTask*(pool: TaskPool; task: Task) =
     pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
   pool.wakeupNext(task.allowedCategories)
 
-proc popTask*(pool: TaskPool; categories: HashSet[Category]): Future[Task] {.async: (raises: [CancelledError]).} =
+proc popTask*(pool: TaskPool; categories: HashSet[Category]; performer: Performer): Future[Task] {.async: (raises: [CancelledError]).} =
 
   while true:
 
@@ -64,6 +64,11 @@ proc popTask*(pool: TaskPool; categories: HashSet[Category]): Future[Task] {.asy
     let getter = Future[void].Raising([CancelledError]).init("TaskPool.addTask")
     for category in categories.items:
       pool.getters.mgetOrPut(category, HashSet[Future[void].Raising([CancelledError])].default).incl(getter)
+
+    pool.toReincarnate.withValue(performer, entry):
+      for t in entry[].dependents.items:
+        t.dependents.excl(entry[])
+        pool.addTask(t)
 
     try:
       await getter
@@ -82,3 +87,5 @@ proc popTask*(pool: TaskPool; categories: HashSet[Category]): Future[Task] {.asy
       pool.pool.del(category)
     else:
       taskSet[].excl(result)
+
+  pool.toReincarnate[performer] = result
