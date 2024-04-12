@@ -41,6 +41,8 @@ type
     categories*: HashSet[Category]
     name*: string
     instrument*: Instrument
+    minVolume* = 0.0
+    maxVolume* = 1.0
     key*, clef* = ""
 
   Instrument* = ref object

@@ -4,6 +4,7 @@ import std/sets
 import std/re
 import std/streams
 import std/sequtils
+from std/math import almostEqual
 
 import chronos
 import chronos/asyncproc
@@ -39,13 +40,9 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
           varName & " = " & (if contains(snippet.snippet, isExpression): snippet.snippet
                              else: "{" & snippet.snippet & "}")
 
-    var taskExpr = ""
-    if pool.tempo != "":
-      taskExpr.add(r"\set Score.tempoHideNote = ##t ")
-      taskExpr.add(r"\tempo " & pool.tempo & " ")
-    if pool.timeSig != "":
-      taskExpr.add(r"\time " & pool.timeSig & " ")
-    taskExpr.add(r"\task")
+    let taskExpr = (if pool.timeSig == "": ""
+                    else: r"\time " & pool.timeSig & " "
+                   ) & r"\task"
 
     for i, performer in pool.performers.pairs:
       file.write("\p")
@@ -54,17 +51,33 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
 
       const newLine = "\p" & repeat(' ', 6)
 
-      var specificTaskExpr = ""
+      var propertiesExpr, specificTaskExpr = ""
+
+      if not almostEqual(performer.minVolume, 0.0):
+        propertiesExpr.add("midiMinimumVolume = #" &
+                           formatFloat(performer.minVolume, ffDecimal, 2) &
+                           newLine
+                          )
+      if not almostEqual(performer.maxVolume, 1.0):
+        propertiesExpr.add("midiMaximumVolume = #" &
+                           formatFloat(performer.maxVolume, ffDecimal, 2) &
+                           newLine
+                          )
+
       if performer.clef != "":
         specificTaskExpr.add(r"\clef " & performer.clef & newLine)
       if performer.key != "":
         specificTaskExpr.add(r"\key " & performer.key & newLine)
-        specificTaskExpr.add(r"\transpose " & snippet.key & " " & transposeKey(performer[]) & " ")
+        specificTaskExpr.add(r"\transpose " & snippet.key & " " &
+                             transposeKey(performer[]) & " "
+                            )
       file.write(format($staffTemplate,
         "instrumentName", performer.name,
         "midiInstrument", performer.instrument.name,
         "staffPrefix", performer.instrument.staffPrefix,
-        "task", specificTaskExpr & taskExpr
+        "tempo", (if pool.tempo == "": "" else: r"\tempo " & pool.tempo),
+        "properties", propertiesExpr,
+        "task", specificTaskExpr & taskExpr,
       ))
 
   const args = @["--svg", "-s", "-dno-print-pages", "-dcrop", "source.ly"]

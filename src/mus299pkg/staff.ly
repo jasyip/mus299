@@ -4,11 +4,14 @@
     \new ${staffPrefix}Staff \with {
       instrumentName = #"$instrumentName"
       midiInstrument = #"$midiInstrument"
+      $properties
     } {
       \autoLineBreaksOff
       $task
     }
-    \midi {}
+    \midi {
+      $tempo
+    }
     \layout {
       ragged-right = ##t
     }
