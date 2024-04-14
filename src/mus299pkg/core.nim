@@ -10,7 +10,7 @@ import chronos
 
 
 
-
+{.experimental: "notnil".}
 
 type
 
@@ -45,13 +45,14 @@ type
     maxVolume* = 1.0
     key*, clef* = ""
 
-  Instrument* = ref object
+  Instrument* = ref InstrumentObj not nil
+  InstrumentObj = object
     name*: string
     staffPrefix*: string
     semitoneTranspose*: range[-127..127]
 
 
-  TaskPool* = ref TaskPoolObj
+  TaskPool* = ref TaskPoolObj not nil
   TaskPoolObj* = object
     performers*: OrderedSet[Performer]
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
