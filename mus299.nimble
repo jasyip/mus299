@@ -14,3 +14,4 @@ bin           = @["mus299"]
 
 requires "nim ^= 2.0.0"
 requires "chronos ^= 4.0.0"
+requires "owlkettle ^= 3.0.0"

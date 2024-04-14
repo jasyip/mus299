@@ -5,7 +5,7 @@ import std/tables
 
 
 import chronos
-
+import chronos/asyncproc
 
 
 
@@ -51,10 +51,12 @@ type
     staffPrefix*: string
     semitoneTranspose*: range[-127..127]
 
+  PerformFuture = Future[void].Raising([CancelledError, AsyncProcessError])
 
-  TaskPool* = ref TaskPoolObj not nil
+  TaskPool* = ref TaskPoolObj
   TaskPoolObj* = object
     performers*: OrderedSet[Performer]
+    performances*: seq[PerformFuture]
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
     pool*: Table[Category, HashSet[Task]]
     toReincarnate*: Table[Performer, Task]
