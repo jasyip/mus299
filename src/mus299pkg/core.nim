@@ -10,7 +10,6 @@ import chronos/asyncproc
 
 
 
-{.experimental: "notnil".}
 
 type
 
@@ -45,7 +44,7 @@ type
     maxVolume* = 1.0
     key*, clef* = ""
 
-  Instrument* = ref InstrumentObj not nil
+  Instrument* = ref InstrumentObj
   InstrumentObj = object
     name*: string
     staffPrefix*: string
@@ -55,11 +54,15 @@ type
 
   TaskPool* = ref TaskPoolObj
   TaskPoolObj* = object
+    tasksnippets*: OrderedSet[TaskSnippet]
+    tasks*: OrderedSet[Task]
+    instruments*: OrderedSet[Instrument]
     performers*: OrderedSet[Performer]
     performances*: seq[PerformFuture]
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
     pool*: Table[Category, HashSet[Task]]
     toReincarnate*: Table[Performer, Task]
+    resync* = false
     tempo*, timeSig* = ""
 
 
