@@ -9,8 +9,9 @@ import owlkettle
 
 
 
-import mus299pkg/[core, performer, pool, task]
-import mus299pkg/gui/pointer
+import mus299pkg/[core, pool, task]
+import mus299pkg/gui/[pointer, tasksnippet, task, instrument, performer]
+
 
 
 
@@ -66,6 +67,9 @@ method view(app: AppState): Widget =
                 for t in app.pool.tasks.items:
                   if t.snippet == x:
                     app.pool.tasks.excl(t)
+                app.pool.resync.excl(x)
+                if not app.pool.resyncAll and app.pool.resync.len == 0:
+                  discard app.redraw()
 
             TaskList:
               pool = app.pool
@@ -83,53 +87,41 @@ method view(app: AppState): Widget =
             Separator() {.expand: false.}
 
             # configuration options
-            Entry:
-              placeholder = r"Tempo (in LilyPond's \tempo format)"
-
-              proc changed(text: string) = 
-                app.pool.resync = true
-                app.pool.tempo = text
-
-            Entry:
-              placeholder = r"Time Signature (in LilyPond's \time format)"
-
-              proc changed(text: string) = 
-                app.pool.resync = true
-                app.pool.timeSig = text
-
-            Separator() {.expand: false.}
-
-            # buttons that add/edit/delete tasks/performers/etc.
-
             Box:
               orient = OrientX
-              margin = padding
-              spacing = padding
 
-              Button:
-                text = "Add Task Snippet"
-                proc clicked() =
-                  discard
+              Entry:
+                placeholder = r"Tempo (in LilyPond's \tempo format)"
+                sensitive = not (app.pool.synchronizing or app.pool.performing)
 
-              Button:
-                text = "Add Task"
-                proc clicked() =
-                  discard
+                proc changed(text: string) = 
+                  app.pool.resyncAll = true
+                  app.pool.tempo = text
 
-              Button:
-                text = "Add Instrument"
-                proc clicked() =
-                  discard
+              Entry:
+                placeholder = r"Time Signature (in LilyPond's \time format)"
+                sensitive = not (app.pool.synchronizing or app.pool.performing)
 
-              Button:
-                text = "Add Performer"
-                proc clicked() =
-                  discard
+                proc changed(text: string) = 
+                  app.pool.resyncAll = true
+                  app.pool.timeSig = text
 
             Separator() {.expand: false.}
 
             # Start/stop button that resyncs before starting if necessary
             Button:
+              text = case uint(app.pool.performing) shl 1 or uint(app.pool.synchronizing):
+                     of 0b00: (if app.pool.resyncAll or
+                                  app.pool.resync.len > 0: "Synchronize then Perform!"
+                               else: "Perform!"
+                              )
+                     of 0b01: "Synchronizing..."
+                     of 0b10:  "Cancel"
+                     of 0b11:  "Cancelling..."
+                     else: raiseAssert ""
+              # sensitive = not app.pool.synchronizing
+              style = [ButtonSuggested]
+
               proc clicked() =
                 discard
 
@@ -138,6 +130,9 @@ method view(app: AppState): Widget =
 when isMainModule:
 
   randomize()
+
+  # TODO: GC_fullCollect then GC_disable right before playing, GC_enable after
+  # GC_step whenevever the one and only task from pool is popped for 5 microsecs
 
   brew(gui(App(pool=TaskPool(
                              varName: "task",

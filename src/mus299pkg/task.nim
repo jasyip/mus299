@@ -84,28 +84,15 @@ proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool) {.async.} =
     raise OSError.newException("lilypond invocation failed")
 
 
-proc newTaskSnippet*(snippet: string;
-                     pool: TaskPool;
-                     isExpression, isAssignment: Regex;
-                     staffJoinStr, varName,
-                     sourceTemplate, staffTemplate: string;
-                    ): Future[TaskSnippet] {.async.} =
+proc newTaskSnippet*(snippet: string; pool: TaskPool): Future[TaskSnippet] {.async.} =
   result = TaskSnippet(path: createTempDir("mus299-", "").Path, snippet: snippet)
-  await resyncTaskSnippet(result,
-                          pool,
-                          isExpression,
-                          isAssignment,
-                          staffJoinStr,
-                          varName,
-                          sourceTemplate,
-                          staffTemplate
-                         )
+  await resyncTaskSnippet(result, pool)
 
 
 func changeDependencies*(task: Task; newDepends: HashSet[Task]) =
-  let e = ValueError.newException("task dependency cycle detected")
+  template e: auto = ValueError.newException("task dependency cycle detected")
   if task in newDepends:
-    raise e
+    raise e()
   var
     acyclic: HashSet[Task]
     stack = toSeq(newDepends - task.depends)
@@ -116,7 +103,7 @@ func changeDependencies*(task: Task; newDepends: HashSet[Task]) =
       acyclic.incl(cur)
       for v in cur.depends.items:
         if v == task:
-          raise e
+          raise e()
         if v notin acyclic:
           stack.add(v)
 

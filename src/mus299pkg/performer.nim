@@ -1,14 +1,17 @@
 import std/sets
+import std/sequtils
 import std/strutils
+import std/strformat
 
-
-import chronos
 
 import core
+import pool
 
+import chronos
+import chronos/asyncproc
 
 const
-  instrumentNames = toHashSet([
+  instrumentNames* = [
     "acoustic grand",
     "bright acoustic",
     "electric grand",
@@ -162,35 +165,54 @@ const
     "mt-32 drums",
     "cm-64 kit",
     "cm-64 drums",
-  ])
-  staffPrefixes = toHashSet([
+  ]
+  staffPrefixes* = [
     "",
     "Drum",
     "Tab",
-  ])
+  ]
+  instrumentNamesSet = toHashSet(instrumentNames)
+  staffPrefixesSet = toHashSet(staffPrefixes)
 
 
-func newInstrument*(name: string;
-                    staffPrefix: string;
-                    semitoneTranspose: range[-127..127];
-                   ): Instrument =
+func newInstrument*(name: string; staffPrefix: string): Instrument =
   let
     lowerName = name.toLowerAscii()
     titleStaffPrefix = staffPrefix.toLowerAscii().capitalizeAscii()
 
-  if lowerName notin instrumentNames:
+  if lowerName notin instrumentNamesSet:
     raise ValueError.newException("name must be actual MIDI instrument")
-  if titleStaffPrefix notin staffPrefixes:
+  if titleStaffPrefix notin staffPrefixesSet:
     raise ValueError.newException("unsupported staff prefix")
 
-  Instrument(name: lowerName,
-             staffPrefix: titleStaffPrefix,
-             semitoneTranspose: semitoneTranspose,
-            )
+  Instrument(name: lowerName, staffPrefix: titleStaffPrefix)
 
+proc perform*(performer: Performer; pool: TaskPool;
+              player: string; playerParams: seq[string];
+              afterPop: proc(x: Task) {.gcsafe, raises: [].} = (proc (_: Task) =
+                                                                  discard
+                                                               );
+             ) {.async.} =
+  assert not performer.performing
+  let task = await pool.popTask(performer.categories, performer)
+  afterPop(task)
+
+  performer.performing = true
+  block:
+    let playerProc = await startProcess(player, task.snippet.path.string,
+                                        concat(playerParams,
+                                               @[&"source-{performer.name}.midi"]
+                                              ),
+                                        options = {UsePath}
+                                       )
+    defer: await playerProc.closeWait()
+    let code = await playerProc.waitForExit()
+    if code != 0:
+      raise OSError.newException(&"MIDI player return code was {code}")
+
+  performer.performing = false
 
 
 func transposeKey*(performer: PerformerObj): string =
   let l = performer.key.len + 1
   performer.key[0..<((performer.key.find(' ') + l) mod l)]
-

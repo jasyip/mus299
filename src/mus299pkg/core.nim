@@ -2,6 +2,8 @@ import std/[paths, dirs]
 import std/[hashes, sets]
 import std/tables
 import std/re
+from std/strutils import toHex, align, strip
+from std/bitops import fastLog2
 
 
 import chronos
@@ -27,6 +29,7 @@ type
     performers*: OrderedSet[Performer]
   TaskSnippetObj* = object
     path*: Path
+    name*: string
     snippet*: string
     key* = "c"
 
@@ -63,7 +66,7 @@ type
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
     pool*: Table[Category, HashSet[Task]]
     toReincarnate*: Table[Performer, Task]
-    resync* = false
+
     tempo*, timeSig* = ""
 
     nameRe*, isExpression*, isAssignment*: Regex
@@ -92,3 +95,14 @@ proc `=destroy`*(x: TaskSnippetObj) =
 
   for f in x.fields:
     `=destroy`(f.addr[])
+
+
+
+template hexAddr*(x: typed): string =
+  "0x" & cast[uint](cast[pointer](x)).toHex.align(BiggestUint.sizeof.fastLog2() div 4, '0')
+
+proc normalizeName*(x: Category | string, nameRe: Regex): string =
+  let stripped = cast[string](x).strip()
+  if stripped.matchLen(nameRe) != stripped.len:
+    raise ValueError.newException("Given name is unacceptable")
+  return stripped

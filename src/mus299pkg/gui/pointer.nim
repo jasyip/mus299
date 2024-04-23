@@ -3,6 +3,9 @@ import std/strutils
 
 import owlkettle
 
+type EditDialogMode* = enum
+  Add
+  Update
 
 
 
@@ -15,20 +18,53 @@ macro pointerList*(t: typedesc): untyped =
 
   let
     asStr = strVal(t)
-    className = ident(asStr & "List")
-    stateName = ident(asStr & "ListState")
-    field = ident(asStr.toLowerAscii() & "s")
+    listName = ident(asStr & "List")
+    listStateName = ident(asStr & "ListState")
+    dialogName = ident(asStr & "Dialog")
+    dialogStateName = ident(asStr & "DialogState")
+    editorName = ident(asStr & "Editor")
+    field = ident(asStr.toLowerAscii())
+    widgetField = ident("val" & asStr[0].toUpperAscii() & asStr[1..^1].toLowerAscii())
+    fieldSet = ident(asStr.toLowerAscii() & "s")
 
-  autoIdent(text)
+  autoIdent(text, title)
 
   quote do:
 
-    viewable `className`:
+    viewable `dialogName`:
+      pool: TaskPool
+      `field`: `t`
+      clone {.private.}: `t`
+
+
+      hooks:
+        build:
+          let x = new(`t`)
+          if not widget.`widgetField`.isNil:
+            x[] = widget.`widgetField`[]
+          state.clone = x
+
+    method view(dialog: `dialogStateName`): Widget =
+      gui:
+        Dialog:
+          title = (if dialog.`field`.isNil: "Create" else: "Update") & " " & `asStr`
+
+          DialogButton {.addButton.}:
+            text = "Cancel"
+            res = DialogCancel
+
+          `editorName`:
+            pool = dialog.pool
+            `field` = dialog.clone
+            original = dialog.`field`
+
+    viewable `listName`:
       filter: string
       pool: TaskPool
+      expanded {.private.}: bool
       proc delete(_: `t`)
 
-    method view(state: `stateName`): Widget =
+    method view(state: `listStateName`): Widget =
       gui:
         Box:
           orient = OrientY
@@ -37,14 +73,24 @@ macro pointerList*(t: typedesc): untyped =
             Button {.expand: false.}:
               text = "Add " & `asStr`
               proc clicked =
-                discard
+                let (res, dialogState) = state.app.open: gui:
+                  `dialogName`:
+                    `field` = nil
+                    pool = state.pool
+
+                if res.kind == DialogAccept:
+                  # The "Update" button was clicked
+                  let dState = `dialogStateName`(dialogState)
+                  state.pool.`fieldSet`.excl(dState.`field`)
+                  state.pool.`fieldSet`.incl(dState.clone)
 
             Button {.expand: false.}:
               text = "Delete All"
               proc clicked =
-                for i in state.pool.`field`.items:
-                  state.delete.callback(i)
-                state.pool.`field`.clear()
+                if not state.delete.isNil:
+                  for i in state.pool.`fieldSet`.items:
+                    state.delete.callback(i)
+                state.pool.`fieldSet`.clear()
 
           Box {.expand: false.}:
             orient = OrientX
@@ -56,4 +102,30 @@ macro pointerList*(t: typedesc): untyped =
             Entry:
               text = state.filter
 
-          # TODO: https://github.com/can-lehmann/owlkettle-crud/blob/main/src/view/user_list.nim
+
+          ScrolledWindow:
+            ListBox:
+              for i in state.pool.`fieldSet`.items:
+                Box:
+                  orient = OrientX
+
+                  Label:
+                    text = (when `asStr` == "Task": i.snippet.name & " | " & hexAddr(i)
+                            else: i.name)
+                    xAlign = 0
+
+                  Button {.expand: false.}:
+                    icon = "entity-edit"
+
+                    proc clicked() =
+                      discard state.app.open: gui:
+                        `dialogName`:
+                          `field` = i
+                          pool = state.pool
+
+                  Button {.expand: false.}:
+                    icon = "user-trash-symbolic"
+
+                    proc clicked() =
+                      state.delete.callback(i)
+                      state.pool.`fieldSet`.excl(i)
