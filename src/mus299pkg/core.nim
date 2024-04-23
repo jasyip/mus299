@@ -26,7 +26,6 @@ type
     depends*, dependents*: HashSet[Task]
     readyDepends*: uint = 0
     allowedCategories*: HashSet[Category]
-    performers*: OrderedSet[Performer]
   TaskSnippetObj* = object
     path*: Path
     name*: string
@@ -51,7 +50,6 @@ type
   InstrumentObj = object
     name*: string
     staffPrefix*: string
-    semitoneTranspose*: range[-127..127]
 
   PerformFuture = Future[void].Raising([CancelledError, AsyncProcessError])
 
