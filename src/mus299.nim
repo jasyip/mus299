@@ -16,8 +16,6 @@ import mus299pkg/gui/pointer
 
 
 const
-  staffJoinStr = "\p"
-  varName = "task"
   expressionRe = r"\s*(?:\\\w+\s*)*\{" 
 
   dataDir = getDataDir() / "mus299".Path
@@ -32,11 +30,6 @@ pointerList(Performer)
 
 viewable App:
   pool: TaskPool
-  tasks: OrderedSet[Task]
-  isExpression: Regex
-  isAssignment: Regex
-  sourceTemplate: string
-  staffTemplate: string
 
 
 method view(app: AppState): Widget =
@@ -146,12 +139,14 @@ when isMainModule:
 
   randomize()
 
-  brew(gui(App(
-               pool=TaskPool(),
-               isExpression=re(r"^" & expressionRe, {reIgnoreCase, reMultiLine, reStudy}),
-               isAssignment=re(r"^([a-z]+)\s*=" & expressionRe, {reMultiLine, reStudy}),
-               sourceTemplate=readFile(string(dataDir / "template.ly".Path)),
-               staffTemplate=readFile(string(dataDir / "staff.ly".Path)),
+  brew(gui(App(pool=TaskPool(
+                             varName: "task",
+                             isExpression: re(r"^" & expressionRe, {reIgnoreCase, reMultiLine, reStudy}),
+                             isAssignment: re(r"^([a-z]+)\s*=" & expressionRe, {reMultiLine, reStudy}),
+                             sourceTemplate: readFile(string(dataDir / "template.ly".Path)),
+                             staffTemplate: readFile(string(dataDir / "staff.ly".Path)),
+                             nameRe: re("[a-z0-9]+(_[a-z0-9]+)*[a-z0-9]*", flags = {reIgnoreCase, reStudy}),
+                            )
               )
           )
       )

@@ -1,7 +1,7 @@
 import std/[paths, dirs]
-
 import std/[hashes, sets]
 import std/tables
+import std/re
 
 
 import chronos
@@ -58,12 +58,24 @@ type
     tasks*: OrderedSet[Task]
     instruments*: OrderedSet[Instrument]
     performers*: OrderedSet[Performer]
+
     performances*: seq[PerformFuture]
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
     pool*: Table[Category, HashSet[Task]]
     toReincarnate*: Table[Performer, Task]
     resync* = false
     tempo*, timeSig* = ""
+
+    nameRe*, isExpression*, isAssignment*: Regex
+    varName*, sourceTemplate*, staffTemplate*: string
+
+    resync*: HashSet[TaskSnippet]
+    resyncAll* = false
+
+    synchronizing*, performing* = false
+
+
+
 
 
 func hash*(_: Category): Hash {.borrow.}

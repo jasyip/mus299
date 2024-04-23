@@ -14,16 +14,11 @@ import performer
 
 
 
-proc resyncTaskSnippet*(snippet: TaskSnippet;
-                        pool: TaskPool;
-                        isExpression, isAssignment: Regex;
-                        staffJoinStr, varName,
-                        sourceTemplate, staffTemplate: string;
-                       ) {.async.} =
+proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool) {.async.} =
   block:
     let file = openFileStream(string(snippet.path / "source.ly".Path), fmWrite)
     defer: file.close()
-    file.write(sourceTemplate)
+    file.write(pool.sourceTemplate)
 
     file.write:
       # assume that snippet is already whitespace-stripped
@@ -31,13 +26,13 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
         snippet.snippet
       else:
         var matches: array[1, string]
-        if contains(snippet.snippet, isAssignment, matches):
-          if matches[0] != varName:
-            varName & snippet.snippet[matches[0].len .. ^1]
+        if contains(snippet.snippet, pool.isAssignment, matches):
+          if matches[0] != pool.varName:
+            pool.varName & snippet.snippet[matches[0].len .. ^1]
           else:
             raise ValueError.newException("Unparseable")
         else:
-          varName & " = " & (if contains(snippet.snippet, isExpression): snippet.snippet
+          pool.varName & " = " & (if contains(snippet.snippet, pool.isExpression): snippet.snippet
                              else: "{" & snippet.snippet & "}")
 
     let taskExpr = (if pool.timeSig == "": ""
@@ -47,7 +42,7 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
     for i, performer in pool.performers.pairs:
       file.write("\p")
       if i > 0:
-        file.write(staffJoinStr)
+        file.write("\p")
 
       const newLine = "\p" & repeat(' ', 6)
 
@@ -68,10 +63,8 @@ proc resyncTaskSnippet*(snippet: TaskSnippet;
         specificTaskExpr.add(r"\clef " & performer.clef & newLine)
       if performer.key != "":
         specificTaskExpr.add(r"\key " & performer.key & newLine)
-        specificTaskExpr.add(r"\transpose " & snippet.key & " " &
-                             transposeKey(performer[]) & " "
-                            )
-      file.write(format($staffTemplate,
+        specificTaskExpr.add(r"\transpose " & snippet.key & " " & transposeKey(performer[]) & " ")
+      file.write(format($pool.staffTemplate,
         "instrumentName", performer.name,
         "midiInstrument", performer.instrument.name,
         "staffPrefix", performer.instrument.staffPrefix,
