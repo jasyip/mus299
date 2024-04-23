@@ -36,6 +36,12 @@ viewable TaskEditor:
         for task in widget.valPool.tasks.items:
           if task != widget.valOriginal:
             task
+      if not widget.valOriginal.isNil:
+        for category in widget.valOriginal.allowedCategories:
+          widget.valPool.pool.withValue(category, entry):
+            if widget.valOriginal in entry[]:
+              state.addToPool = true
+              break
 
 method view(editor: TaskEditorState): Widget = 
   gui:
