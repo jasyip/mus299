@@ -21,7 +21,7 @@ const
   dataDir = getDataDir() / "mus299".Path
 
   player = "aplaymidi"
-  playerParams = @["-p", "128", "-d", "0"]
+  playerParams = @["-p128", "-d0"]
 
 pointerList(TaskSnippet)
 pointerList(Task)
