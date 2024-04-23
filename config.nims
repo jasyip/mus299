@@ -4,3 +4,4 @@ else:
   --debugger:native
 
 --define:nimPreviewHashRef
+--define:useRealtimeGC
