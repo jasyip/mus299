@@ -37,11 +37,16 @@ macro pointerList*(t: typedesc): untyped =
       clone {.private.}: `t`
 
 
-      hooks:
+      hooks clone:
         build:
           let x = new(`t`)
           if not widget.`widgetField`.isNil:
-            x[] = widget.`widgetField`[]
+            when `asStr` == "TaskSnippet":
+              x.name = widget.`widgetField`.name
+              x.snippet = widget.`widgetField`.snippet
+              x.key = widget.`widgetField`.key
+            else:
+              x[] = widget.`widgetField`[]
           state.clone = x
 
     method view(dialog: `dialogStateName`): Widget =
@@ -72,6 +77,8 @@ macro pointerList*(t: typedesc): untyped =
             orient = OrientX
             Button {.expand: false.}:
               text = "Add " & `asStr`
+              sensitive = `asStr` in ["Task", "Instrument"] or not
+                          (state.pool.synchronizing or state.pool.performances.len > 0)
               proc clicked =
                 let (res, dialogState) = state.app.open: gui:
                   `dialogName`:
@@ -86,6 +93,7 @@ macro pointerList*(t: typedesc): untyped =
 
             Button {.expand: false.}:
               text = "Delete All"
+              sensitive = state.pool.`fieldSet`.len > 0
               proc clicked =
                 if not state.delete.isNil:
                   for i in state.pool.`fieldSet`.items:
@@ -101,6 +109,7 @@ macro pointerList*(t: typedesc): untyped =
 
             Entry:
               text = state.filter
+              sensitive = state.pool.`fieldSet`.len > 0
 
 
           ScrolledWindow:
@@ -116,6 +125,9 @@ macro pointerList*(t: typedesc): untyped =
 
                   Button {.expand: false.}:
                     icon = "entity-edit"
+                    sensitive = not (state.pool.performances.len > 0 or 
+                                     (`asStr` != "Task" and
+                                      state.pool.synchronizing))
 
                     proc clicked() =
                       discard state.app.open: gui:
@@ -125,6 +137,9 @@ macro pointerList*(t: typedesc): untyped =
 
                   Button {.expand: false.}:
                     icon = "user-trash-symbolic"
+                    sensitive = not (state.pool.performances.len > 0 or 
+                                     (`asStr` != "Task" and
+                                      state.pool.synchronizing))
 
                     proc clicked() =
                       state.delete.callback(i)

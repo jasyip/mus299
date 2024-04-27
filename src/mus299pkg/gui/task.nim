@@ -3,13 +3,11 @@ from std/sugar import collect
 from std/sequtils import toSeq
 from std/strutils import strip
 from std/sets import items, contains, incl, excl, len
-from std/tables import withValue
 
 import owlkettle
 
 import ../core
 import ../task
-import ../pool
 
 viewable TaskEditor:
   pool: TaskPool
@@ -23,25 +21,30 @@ viewable TaskEditor:
   addToPool {.private.}: bool
   invalidCategoryLabel {.private.}: string
 
-  hooks:
+  hooks snippets:
     build:
-      state.snippetInd = -1
       state.snippets = toSeq(widget.valPool.tasksnippets.items)
+
+  hooks tasks:
+    build:
+      state.tasks = collect:
+        for task in widget.valPool.tasks.items:
+          if task != widget.valOriginal:
+            task
+
+  hooks addToPool:
+    build:
+      state.addToPool = widget.valOriginal in widget.valPool.initialPool
+
+  hooks:
+    afterBuild:
+      state.snippetInd = -1
       state.snippetAddrs = collect:
         for (i, snippet) in enumerate(state.snippets):
           if snippet == widget.valTask.snippet:
             state.snippetInd = i
           snippet.name
-      state.tasks = collect:
-        for task in widget.valPool.tasks.items:
-          if task != widget.valOriginal:
-            task
-      if not widget.valOriginal.isNil:
-        for category in widget.valOriginal.allowedCategories:
-          widget.valPool.pool.withValue(category, entry):
-            if widget.valOriginal in entry[]:
-              state.addToPool = true
-              break
+      discard state.redraw()
 
 method view(editor: TaskEditorState): Widget = 
   gui:
@@ -49,7 +52,7 @@ method view(editor: TaskEditorState): Widget =
       orient = OrientY
       Grid:
         Label {.x: 0, y: 0.}:
-          text = "Snippet memory address"
+          text = "Snippet"
           xAlign = 0 # Align left
 
         DropDown {.x: 1, y: 0, hExpand: true.}:
@@ -181,11 +184,10 @@ method view(editor: TaskEditorState): Widget =
             editor.task = editor.original
 
           if editor.addToPool:
-            editor.pool.addTask(editor.task)
+            editor.pool.initialPool.incl(editor.task)
           else:
-            for category in editor.task.allowedCategories.items:
-              editor.pool.pool.withValue(category, v):
-                v[].excl(editor.task)
+            editor.pool.initialPool.excl(editor.task)
+
           editor.respond(DialogResponse(kind: DialogAccept))
 
 export TaskEditor, TaskEditorState

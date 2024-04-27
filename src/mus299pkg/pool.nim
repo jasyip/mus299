@@ -3,7 +3,6 @@ import std/random
 from std/sugar import collect
 import std/enumerate
 import std/sequtils
-import std/strformat
 
 import chronos
 import chronos/asyncproc
@@ -57,6 +56,7 @@ proc wakeupNext(pool: TaskPool; categories: HashSet[Category]) {.raises: [].} =
 
 
 proc addTask*(pool: TaskPool; task: Task) =
+  echo "Adding task ", hexAddr(task)
   task.readyDepends = task.depends.len.uint
   for category in task.allowedCategories.items:
     pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
@@ -110,39 +110,19 @@ proc popTask*(pool: TaskPool;
   pool.toReincarnate[performer] = result
 
 
-proc resetTaskPool*(pool: TaskPool; starting: HashSet[Task]) =
-  pool.pool.clear()
-  pool.toReincarnate.clear()
-  var stack: seq[Task]
-  for task in starting.items:
-    task.readyDepends = 0
-    for t in task.dependents.items:
-      stack.add(t)
-
-  while stack.len > 0:
-    let cur = stack.pop()
-    if cur.readyDepends > 0:
-      cur.readyDepends = 0
-      for t in cur.dependents.items:
-        stack.add(t)
-
-  for task in starting.items:
-    pool.addTask(task)
-
 proc perform(performer: Performer; pool: TaskPool;
              player: string; playerParams: seq[string];
-             beforePop: proc() {.gcsafe, raises: [].} = (proc = discard);
-             afterPop: proc(x: Task) {.gcsafe, raises: [].} = (proc (_: Task) =
-                                                                 discard
-                                                              );
+             afterPop: proc() {.gcsafe, raises: [].} = (proc = discard);
             ) {.async: (raises: [CancelledError, AsyncProcessError]).} =
-  assert not performer.performing
-  let task = await pool.popTask(performer.categories, performer)
-  afterPop(task)
+  while true:
+    assert performer.performing.isNil
+    performer.performing = await pool.popTask(performer.categories, performer)
+    echo "performer ", performer.name, " has task ", hexAddr(performer.performing)
+    defer:
+      performer.performing = nil
+    afterPop()
 
-  performer.performing = true
-  block:
-    let playerProc = await startProcess(player, task.snippet.path.string,
+    let playerProc = await startProcess(player, performer.performing.snippet.path.string,
                                         concat(playerParams,
                                                @["source-" & performer.name & ".midi"]
                                               ),
@@ -151,27 +131,31 @@ proc perform(performer: Performer; pool: TaskPool;
     defer: await playerProc.closeWait()
     let code = await playerProc.waitForExit()
     if code != 0:
-      try:
-        raise AsyncProcessError.newException(&"MIDI player return code was {code}")
-      except ValueError:
-        discard
-
-  performer.performing = false
+      raise AsyncProcessError.newException("MIDI player return code was " & $code)
 
 
 proc startPerformance*(pool: TaskPool;
                        player: string; playerParams: seq[string];
-                       beforePop: proc() {.gcsafe, raises: []} = (proc = discard);
-                       afterPop: proc(x: Task) {.gcsafe, raises: [].} = (proc(x: Task) = discard);
-                      ) =
-  pool.performances.delete(0..<(pool.performances.len))
+                       afterPop: proc() {.gcsafe, raises: [].} = (proc = discard);
+                      ) {.async.} =
   for performer in pool.performers.items:
-    pool.performances.add(performer.perform(pool, player, playerParams, beforePop, afterPop))
-    asyncSpawn pool.performances[^1]
+    pool.performances.add(performer.perform(pool, player, playerParams, afterPop))
+
+  for task in pool.initialPool:
+    pool.addTask(task)
+
+  await allFutures(pool.performances)
 
 proc endPerformance*(pool: TaskPool) {.async.} =
   for performer in pool.performances:
     performer.cancelSoon()
 
-  await allFutures(pool.performances)
-
+  try:
+    await allFutures(pool.performances)
+  finally:
+    pool.performances = @[]
+    pool.getters.clear()
+    pool.pool.clear()
+    pool.toReincarnate.clear()
+    for task in pool.tasks:
+      task.readyDepends = 0

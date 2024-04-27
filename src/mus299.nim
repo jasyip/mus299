@@ -2,14 +2,20 @@ import std/appdirs
 import std/re
 import std/paths
 import std/sets
+import std/sequtils
 import std/random
+import std/enumerate
+import std/strformat
+import std/envvars
+import std/tables
 
+import results
 import chronos
 import owlkettle
 
 
 
-import mus299pkg/[core, pool, task]
+import mus299pkg/[core, pool as taskpool, task]
 import mus299pkg/gui/[pointer, tasksnippet, task, instrument, performer]
 
 
@@ -31,6 +37,7 @@ pointerList(Performer)
 
 viewable App:
   pool: TaskPool
+  svgcache: Table[Performer, Table[TaskSnippet, Pixbuf]]
 
 
 method view(app: AppState): Widget =
@@ -50,6 +57,13 @@ method view(app: AppState): Widget =
             spacing = padding
 
             # children will be Pictures
+            for performer in app.pool.performers:
+              if not performer.performing.isNil:
+                Picture {.expand: false, hAlign: AlignStart, vAlign: AlignStart.}:
+                  pixbuf = app.svgcache[performer][performer.performing.snippet]
+                  contentFit = ContentCover
+                  # sizeRequest = (-1, 150)
+
 
         ScrolledWindow:
           Box:
@@ -68,8 +82,8 @@ method view(app: AppState): Widget =
                   if t.snippet == x:
                     app.pool.tasks.excl(t)
                 app.pool.resync.excl(x)
-                if not app.pool.resyncAll and app.pool.resync.len == 0:
-                  discard app.redraw()
+                for snippetcache in app.svgcache.mvalues:
+                  snippetcache.del(x)
 
             TaskList:
               pool = app.pool
@@ -80,9 +94,12 @@ method view(app: AppState): Widget =
                 for p in app.pool.performers.items:
                   if p.instrument == x:
                     app.pool.performers.excl(p)
+                    app.svgcache.del(p)
 
             PerformerList:
               pool = app.pool
+              proc delete(x: Performer) =
+                app.svgcache.del(x)
 
             Separator() {.expand: false.}
 
@@ -91,16 +108,16 @@ method view(app: AppState): Widget =
               orient = OrientX
 
               Entry:
-                placeholder = r"Tempo (in LilyPond's \tempo format)"
-                sensitive = not (app.pool.synchronizing or app.pool.performing)
+                placeholder = r"Tempo (denominator = bpm)"
+                sensitive = not (app.pool.synchronizing or app.pool.performances.len > 0)
 
                 proc changed(text: string) = 
                   app.pool.resyncAll = true
                   app.pool.tempo = text
 
               Entry:
-                placeholder = r"Time Signature (in LilyPond's \time format)"
-                sensitive = not (app.pool.synchronizing or app.pool.performing)
+                placeholder = r"Time Signature (numerator/denominator)"
+                sensitive = not (app.pool.synchronizing or app.pool.performances.len > 0)
 
                 proc changed(text: string) = 
                   app.pool.resyncAll = true
@@ -110,7 +127,7 @@ method view(app: AppState): Widget =
 
             # Start/stop button that resyncs before starting if necessary
             Button:
-              text = case uint(app.pool.performing) shl 1 or uint(app.pool.synchronizing):
+              text = case app.pool.performances.len.bool.uint shl 1 or app.pool.synchronizing.uint:
                      of 0b00: (if app.pool.resyncAll or
                                   app.pool.resync.len > 0: "Synchronize then Perform!"
                                else: "Perform!"
@@ -119,29 +136,101 @@ method view(app: AppState): Widget =
                      of 0b10:  "Cancel"
                      of 0b11:  "Cancelling..."
                      else: raiseAssert ""
-              # sensitive = not app.pool.synchronizing
+              sensitive = not app.pool.synchronizing and
+                              app.pool.tasksnippets.len > 0 and
+                              app.pool.performers.len > 0 and
+                              app.pool.initialPool.len > 0
               style = [ButtonSuggested]
 
               proc clicked() =
-                discard
+                defer:
+                  app.pool.synchronizing = false
+                if app.pool.performances.len > 0:
+                  app.pool.synchronizing = true
+                  echo "stopping performance"
+                  waitFor app.pool.endPerformance()
+                  app.pool.synchronizing = false
+                else:
+                  if app.pool.resyncAll or app.pool.resync.len > 0:
+                    app.pool.synchronizing = true
+
+                    for performer in app.pool.performers:
+                      discard app.svgcache.hasKeyOrPut(performer, Table[TaskSnippet, Pixbuf].default)
+
+                    if app.pool.resyncAll:
+                      app.pool.resync.incl(app.pool.tasksnippets)
+                    let
+                      snippets = toSeq(app.pool.resync)
+                      futures = mapIt(snippets, it.resyncTaskSnippet(app.pool))
+
+                    futures.allFutures.waitFor()
+                    for i, future in enumerate(futures):
+                      future.read.isOkOr:
+                        discard app.open: gui:
+                          MessageDialog:
+                            message = &"Error synchronizing task snippet \"{snippets[i].name}\":\p" & error
+
+                            DialogButton {.addButton.}:
+                              text = "Ok"
+                              res = DialogAccept
+                        continue
+                      for (performer, snippetcache) in app.svgcache.mpairs:
+                        if (performer.instrument.staffPrefix == "Drum") != (snippets[i].staffPrefix == "Drum"):
+                          snippetcache.del(snippets[i])
+                          continue
+                        snippetcache[snippets[i]] = loadPixbuf(string(snippets[i].path / Path("source-" & performer.name & ".cropped.svg")), width = -1, height = 150, preserveAspectRatio = true)
+                      app.pool.resync.excl(snippets[i])
+                    app.pool.resyncAll = false
+
+                    if app.pool.resync.len > 0:
+                      return
+
+                  proc afterPop() =
+                    # try:
+                    #   discard app.redraw()
+                    # except:
+                    #   discard
+                    discard
+
+                  # start performance
+                  echo "starting performance"
+                  asyncSpawn app.pool.startPerformance(player, playerParams, afterPop)
 
 
 
-when isMainModule:
+proc main =
 
   randomize()
 
   # TODO: GC_fullCollect then GC_disable right before playing, GC_enable after
   # GC_step whenevever the one and only task from pool is popped for 5 microsecs
+  let pool = TaskPool(
+                      varName: "task",
+                      isExpression: re(r"^" & expressionRe, {reIgnoreCase, reMultiLine, reStudy}),
+                      isAssignment: re(r"^([a-z]+)\s*=" & expressionRe, {reMultiLine, reStudy}),
+                      sourceTemplate: readFile(string(dataDir / "template.ly".Path)),
+                      staffTemplate: readFile(string(dataDir / "staff.ly".Path)),
+                      nameRe: re("[a-z0-9]+(_[a-z0-9]+)*[a-z0-9]*", flags = {reIgnoreCase, reStudy}),
+                     )
+  #[
+  let
+    i = newInstrument("honky-tonk", "")
+    p = Performer(name: "jesus", categories: toHashSet(["A".Category]), instrument: i)
+  pool.performers.incl(p)
 
-  brew(gui(App(pool=TaskPool(
-                             varName: "task",
-                             isExpression: re(r"^" & expressionRe, {reIgnoreCase, reMultiLine, reStudy}),
-                             isAssignment: re(r"^([a-z]+)\s*=" & expressionRe, {reMultiLine, reStudy}),
-                             sourceTemplate: readFile(string(dataDir / "template.ly".Path)),
-                             staffTemplate: readFile(string(dataDir / "staff.ly".Path)),
-                             nameRe: re("[a-z0-9]+(_[a-z0-9]+)*[a-z0-9]*", flags = {reIgnoreCase, reStudy}),
-                            )
-              )
-          )
-      )
+  var s = waitFor newTaskSnippet("a", pool)
+  for i in 1..20:
+    echo i
+    s.snippet.add($i)
+    try:
+      waitFor resyncTaskSnippet(s, pool)
+    except:
+      echo getCurrentExceptionMsg()
+  ]#
+
+  putEnv("GTK_THEME", "Default")
+
+  brew(gui(App(pool=pool)))
+
+when isMainModule:
+  main()

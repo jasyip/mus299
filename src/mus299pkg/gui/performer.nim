@@ -21,15 +21,19 @@ viewable PerformerEditor:
   curCategory {.private.}: string
   invalidCategoryLabel {.private.}: string
 
-  hooks:
+  hooks instruments:
     build:
-      state.instrumentInd = -1
       state.instruments = toSeq(widget.valPool.instruments.items)
+
+  hooks:
+    afterBuild:
+      state.instrumentInd = -1
       state.instrumentNames = collect:
         for (i, instrument) in enumerate(state.instruments):
           if instrument == widget.valPerformer.instrument:
             state.instrumentInd = i
           instrument.name
+      discard state.redraw()
 
 method view(editor: PerformerEditorState): Widget = 
   gui:
@@ -138,6 +142,7 @@ method view(editor: PerformerEditorState): Widget =
 
         Entry {.x: 1, y: 5.}:
           text = editor.performer.key
+          placeholder = "pitch mode"
 
           proc changed(text: string) =
             editor.performer.key = text

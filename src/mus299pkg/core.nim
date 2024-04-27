@@ -28,14 +28,14 @@ type
     allowedCategories*: HashSet[Category]
   TaskSnippetObj* = object
     path*: Path
-    name*: string
-    snippet*: string
+    snippet*, name*: string
     key* = "c"
+    staffPrefix* = ""
 
   Performer* = ref PerformerObj
   # Duplicate performers are their own object
   PerformerObj* = object of RootObj
-    performing* = false
+    performing*: Task = nil
     # When performing, the size of this should be just 1
     # but when that task requires another task at a certain time,
     # the sequence can be appended to with the "secondary" task(s)
@@ -59,6 +59,7 @@ type
     tasks*: OrderedSet[Task]
     instruments*: OrderedSet[Instrument]
     performers*: OrderedSet[Performer]
+    initialPool*: HashSet[Task]
 
     performances*: seq[PerformFuture]
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
@@ -73,7 +74,7 @@ type
     resync*: HashSet[TaskSnippet]
     resyncAll* = false
 
-    synchronizing*, performing* = false
+    synchronizing* = false
 
 
 
@@ -84,15 +85,6 @@ func `==`*(_, _: Category): bool {.borrow.}
 
 
 
-proc `=destroy`*(x: TaskSnippetObj) =
-  if x.path.string.len > 0:
-    try:
-      removeDir(x.path)
-    except OSError:
-      discard
-
-  for f in x.fields:
-    `=destroy`(f.addr[])
 
 
 
@@ -104,3 +96,13 @@ proc normalizeName*(x: Category | string, nameRe: Regex): string =
   if stripped.matchLen(nameRe) != stripped.len:
     raise ValueError.newException("Given name is unacceptable")
   return stripped
+
+proc `=destroy`*(x: TaskSnippetObj) =
+  if x.path.string.len > 0:
+    try:
+      removeDir(x.path)
+    except OSError:
+      discard
+
+  for f in x.fields:
+    `=destroy`(f.addr[])

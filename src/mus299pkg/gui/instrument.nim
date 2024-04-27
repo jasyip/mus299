@@ -17,10 +17,14 @@ viewable InstrumentEditor:
   selectedInstrumentInd {.private.}: int
   selectedPrefixInd {.private.}: int
 
-  hooks:
+  hooks selectedInstrumentInd:
     build:
       if not widget.valOriginal.isNil:
         state.selectedInstrumentInd = find(instrumentNamesSeq, widget.valOriginal.name)
+
+  hooks selectedPrefixInd:
+    build:
+      if not widget.valOriginal.isNil:
         state.selectedPrefixInd = find(staffPrefixesSeq, widget.valOriginal.staffPrefix)
 
 method view(editor: InstrumentEditorState): Widget = 

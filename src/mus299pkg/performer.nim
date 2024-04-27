@@ -1,14 +1,10 @@
 import std/sets
-import std/sequtils
 import std/strutils
-import std/strformat
 
 
 import core
-import pool
 
 import chronos
-import chronos/asyncproc
 
 const
   instrumentNames* = [
@@ -187,30 +183,6 @@ func newInstrument*(name: string; staffPrefix: string): Instrument =
 
   Instrument(name: lowerName, staffPrefix: titleStaffPrefix)
 
-proc perform*(performer: Performer; pool: TaskPool;
-              player: string; playerParams: seq[string];
-              afterPop: proc(x: Task) {.gcsafe, raises: [].} = (proc (_: Task) =
-                                                                  discard
-                                                               );
-             ) {.async.} =
-  assert not performer.performing
-  let task = await pool.popTask(performer.categories, performer)
-  afterPop(task)
-
-  performer.performing = true
-  block:
-    let playerProc = await startProcess(player, task.snippet.path.string,
-                                        concat(playerParams,
-                                               @[&"source-{performer.name}.midi"]
-                                              ),
-                                        options = {UsePath}
-                                       )
-    defer: await playerProc.closeWait()
-    let code = await playerProc.waitForExit()
-    if code != 0:
-      raise OSError.newException(&"MIDI player return code was {code}")
-
-  performer.performing = false
 
 
 func transposeKey*(performer: PerformerObj): string =
