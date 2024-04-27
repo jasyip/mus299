@@ -6,7 +6,7 @@ description   = "MUS299 Spring 2024 Capstone Project"
 license       = "GPL-3.0-only"
 srcDir        = "src"
 binDir        = "bin"
-bin           = @["mus299"]
+bin           = @["gui", "oneshot"]
 
 from std/sugar import collect
 import std/os

@@ -212,21 +212,6 @@ proc main =
                       staffTemplate: readFile(string(dataDir / "staff.ly".Path)),
                       nameRe: re("[a-z0-9]+(_[a-z0-9]+)*[a-z0-9]*", flags = {reIgnoreCase, reStudy}),
                      )
-  #[
-  let
-    i = newInstrument("honky-tonk", "")
-    p = Performer(name: "jesus", categories: toHashSet(["A".Category]), instrument: i)
-  pool.performers.incl(p)
-
-  var s = waitFor newTaskSnippet("a", pool)
-  for i in 1..20:
-    echo i
-    s.snippet.add($i)
-    try:
-      waitFor resyncTaskSnippet(s, pool)
-    except:
-      echo getCurrentExceptionMsg()
-  ]#
 
   putEnv("GTK_THEME", "Default")
 

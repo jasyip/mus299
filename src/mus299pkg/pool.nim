@@ -142,7 +142,12 @@ proc startPerformance*(pool: TaskPool;
     pool.performances.add(performer.perform(pool, player, playerParams, afterPop))
 
   for task in pool.initialPool:
-    pool.addTask(task)
+    task.readyDepends = task.depends.len.uint
+    for category in task.allowedCategories.items:
+      pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
+
+  for task in pool.initialPool:
+    pool.wakeupNext(task.allowedCategories)
 
   await allFutures(pool.performances)
 
