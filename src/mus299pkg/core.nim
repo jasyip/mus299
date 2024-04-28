@@ -51,7 +51,7 @@ type
     name*: string
     staffPrefix*: string
 
-  PerformFuture = Future[void].Raising([CancelledError, AsyncProcessError])
+  # PerformFuture = Future[void].Raising([CancelledError, AsyncProcessError])
 
   TaskPool* = ref TaskPoolObj
   TaskPoolObj* = object
@@ -61,7 +61,7 @@ type
     performers*: OrderedSet[Performer]
     initialPool*: HashSet[Task]
 
-    performances*: seq[PerformFuture]
+    performances*: seq[Future[void]]
     getters*: Table[Category, HashSet[Future[void].Raising([CancelledError])]]
     pool*: Table[Category, HashSet[Task]]
     toReincarnate*: Table[Performer, Task]

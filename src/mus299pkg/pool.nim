@@ -110,19 +110,22 @@ proc popTask*(pool: TaskPool;
   pool.toReincarnate[performer] = result
 
 
+
 proc perform(performer: Performer; pool: TaskPool;
              player: string; playerParams: seq[string];
-             afterPop: proc() {.gcsafe, raises: [].} = (proc = discard);
-            ) {.async: (raises: [CancelledError, AsyncProcessError]).} =
+             beforePop: proc(): Future[void] {.gcsafe, raises: [].} = nil;
+             afterPop: proc(_: Task): Future[void] {.gcsafe, raises: [].} = nil;
+            ) {.async.} =
   while true:
-    assert performer.performing.isNil
-    performer.performing = await pool.popTask(performer.categories, performer)
-    echo "performer ", performer.name, " has task ", hexAddr(performer.performing)
     defer:
-      performer.performing = nil
-    afterPop()
+      if not beforePop.isNil:
+        await beforePop()
+    let task = await pool.popTask(performer.categories, performer)
+    echo "performer ", performer.name, " has task ", hexAddr(task)
+    if not afterPop.isNil:
+      await afterPop(task)
 
-    let playerProc = await startProcess(player, performer.performing.snippet.path.string,
+    let playerProc = await startProcess(player, task.snippet.path.string,
                                         concat(playerParams,
                                                @["source-" & performer.name & ".midi"]
                                               ),
@@ -135,11 +138,12 @@ proc perform(performer: Performer; pool: TaskPool;
 
 
 proc startPerformance*(pool: TaskPool;
-                       player: string; playerParams: seq[string];
-                       afterPop: proc() {.gcsafe, raises: [].} = (proc = discard);
-                      ) {.async.} =
+                      player: string; playerParams: seq[string];
+                      beforePop: proc(): Future[void] {.gcsafe, raises: [].} = nil;
+                      afterPop: proc(_: Task): Future[void] {.gcsafe, raises: [].} = nil;
+                     ) {.async.} =
   for performer in pool.performers.items:
-    pool.performances.add(performer.perform(pool, player, playerParams, afterPop))
+    pool.performances.add(performer.perform(pool, player, playerParams, beforePop, afterPop))
 
   for task in pool.initialPool:
     task.readyDepends = task.depends.len.uint
@@ -150,6 +154,28 @@ proc startPerformance*(pool: TaskPool;
     pool.wakeupNext(task.allowedCategories)
 
   await allFutures(pool.performances)
+
+proc startPerformance*(performer: Performer; pool: TaskPool;
+                       player: string; playerParams: seq[string];
+                       beforePop: proc() {.gcsafe, raises: [].};
+                       afterPop: proc(_: Task) {.gcsafe, raises: [].} = nil;
+                      ) {.async.} =
+  let
+    bp = if beforePop.isNil: nil
+         else:
+           proc {.async.} = beforePop()
+    ap = if afterPop.isNil: nil
+         else:
+           proc(x: Task) {.async.} = afterPop(x)
+  await perform(performer,
+                pool,
+                player,
+                playerParams,
+                bp,
+                ap
+               )
+
+
 
 proc endPerformance*(pool: TaskPool) {.async.} =
   for performer in pool.performances:
