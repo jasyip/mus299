@@ -1,9 +1,11 @@
+import std/json
 from std/sugar import collect
 from std/sets import items, contains
 
 
 import chronos
 import chronos/threadsync
+import results
 
 
 
@@ -14,8 +16,8 @@ import ../core
 
 type
   Backend* = object
-    toB*, fromB*: ThreadSignalPtr
-    toBData*, fromBData*: cstring # json string of whatever
+    signal*: ThreadSignalPtr
+    toBData*, fromBData*: cstring
 
   TaskSnippetJson* = object
     address*: uint
@@ -39,12 +41,23 @@ type
     minVolume*, maxVolume*: float
     key*, clef*: string
 
-proc sendToB*(b: var Backend; s: string; timeout = InfiniteDuration): Result[bool, string] =
+proc fireSync*(b: var Backend, timeout = InfiniteDuration): bool =
+  fireSync(b.signal, timeout).expect("improper signal while firing")
+
+proc sendToB*(b: var Backend;
+              m: string;
+              node: JsonNode = nil;
+              timeout = InfiniteDuration;
+             ): bool =
+  let n = if node.isNil: newJObject() else: node
+  if n.kind == JObject:
+    n["method"] = % m
+  let s = $n
   if not b.toBData.isNil:
     freeShared(cast[ptr char](b.toBData))
   b.toBData = cast[cstring](createSharedU(char, s.len + 1))
   copyMem(b.toBData, s.cstring, s.len + 1)
-  fireSync(b.toB, timeout)
+  fireSync(b, timeout)
 
 template intAddr*(x: typed): uint =
   cast[uint](cast[pointer](x))
@@ -94,3 +107,22 @@ func toJson*(x: Performer): PerformerJson =
                 key: x.key,
                 clef: x.clef,
                )
+
+proc waitSync*(b: var Backend, timeout = InfiniteDuration): bool =
+  waitSync(b.signal, timeout).expect("improper signal while waiting")
+
+proc popJson*(b: var Backend; s: var cstring): JsonNode =
+  discard waitSync(b)
+
+  if s.isNil:
+    return newJNull()
+
+  defer:
+    freeShared(cast[ptr char](s))
+    s = nil
+  let json = parseJson($s)
+  if json.kind == JObject:
+    if "error" in json:
+      raise ValueError.newException(json["error"].str)
+    json.delete("error")
+  json

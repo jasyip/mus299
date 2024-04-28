@@ -2,10 +2,7 @@ import std/appdirs
 import std/re
 import std/paths
 import std/sets
-import std/sequtils
 import std/random
-import std/enumerate
-import std/strformat
 import std/envvars
 import std/tables
 import std/json
@@ -40,27 +37,41 @@ type
     b: ptr Backend
     lock: AsyncLock
 
-proc sendFromB(b: ABackend; s: string) {.async.} =
+
+proc popJsonAsync*(b: ptr ABackend; s: ptr cstring): Future[JsonNode] {.async.} =
+  await wait(b.b.signal)
+
+  if s.isNil:
+    return newJNull()
+
+  defer:
+    freeShared(cast[ptr char](s[]))
+    s[] = nil
+  let json = parseJson($s[])
+  if json.kind == JObject:
+    if "error" in json:
+      raise ValueError.newException(json["error"].str)
+    json.delete("error")
+  json
+
+proc respondMessage(b: ptr ABackend; msg: string): Future[bool] {.async.} =
   await b.lock.acquire()
   defer: b.lock.release()
   if not b.b.fromBData.isNil:
     freeShared(cast[ptr char](b.b.fromBData))
-  b.b.fromBData = cast[cstring](createSharedU(char, s.len + 1))
-  copyMem(b.b.fromBData, s.cstring, s.len + 1)
-  await fire(b.b.fromB)
+  b.b.fromBData = cast[cstring](createSharedU(byte, msg.len + 1))
+  copyMem(b.b.fromBData, msg.cstring, msg.len + 1)
+  await fire(b.b.signal)
 
 
-
-proc readMessage(b: var ABackend;
+proc readMessage(b: ptr ABackend;
                  pool: TaskPool;
-                 performanceFut: var Future[void];
+                 performanceFut: ptr Future[void];
                 ): Future[string] {.async.} =
 
 
-  await wait(b.b[].toB)
-
   let
-    json = parseJson($b.b[].toBData)
+    json = await popJsonAsync(b, b.b.toBData.addr)
     m = json["method"].str
 
   json.delete("method")
@@ -136,10 +147,7 @@ proc readMessage(b: var ABackend;
       depends = collect:
         for dep in j.depends:
           {cast[Task](cast[pointer](dep))}
-    try:
-      changeDependencies(what, depends)
-    except ValueError as e:
-      return e.msg
+    changeDependencies(what, depends)
 
     what.snippet = cast[TaskSnippet](cast[pointer](j.snippet))
     what.allowedCategories = collect:
@@ -181,53 +189,61 @@ proc readMessage(b: var ABackend;
     pool.timeSig = json["timeSig"].str
     pool.resyncAll = true
   of "getTaskSnippet":
-    await b.sendFromB($ %* toJson(cast[TaskSnippet](cast[pointer](json["address"].num))))
+    result = $ %* toJson(cast[TaskSnippet](cast[pointer](json["address"].num)))
   of "getTaskSnippets":
     let xs = collect:
       for i in pool.tasksnippets:
         toJson(i)
-    await b.sendFromB($ %* xs)
+    result = $ %* xs
   of "getTask":
-    await b.sendFromB($ %* toJson(cast[Task](cast[pointer](json["address"].num)), pool))
+    result = $ %* toJson(cast[Task](cast[pointer](json["address"].num)), pool)
   of "getTasks":
     let xs = collect:
       for i in pool.tasks:
         toJson(i, pool)
-    await b.sendFromB($ %* xs)
+    result = $ %* xs
   of "getInstrument":
-    await b.sendFromB($ %* toJson(cast[Instrument](cast[pointer](json["address"].num))))
+    result = $ %* toJson(cast[Instrument](cast[pointer](json["address"].num)))
   of "getInstruments":
     let xs = collect:
       for i in pool.instruments:
         toJson(i)
-    await b.sendFromB($ %* xs)
+    result = $ %* xs
   of "getPerformer":
-    await b.sendFromB($ %* toJson(cast[Performer](cast[pointer](json["address"].num))))
+    result = $ %* toJson(cast[Performer](cast[pointer](json["address"].num)))
   of "getPerformers":
     let xs = collect:
       for i in pool.performers:
         toJson(i)
-    await b.sendFromB($ %* xs)
+    result = $ %* xs
   of "start":
     # TODO: resync code here
-    performanceFut = startPerformance(pool, player, playerParams)
+    # and signal to frontend every svg path so that they can cache.
+    # then after waiting for signal, start performance
+    await fire(b.b.signal)
+    await wait(b.b.signal)
+
+    performanceFut[] = startPerformance(pool, player, playerParams)
   of "stop":
     await endPerformance(pool)
     try:
-      performanceFut.read()
+      performanceFut[].read()
     except CancelledError:
       discard
-    performanceFut = nil
+    performanceFut[] = nil
   else:
-    return "unrecognized"
+    raise ValueError.newException("unrecognized")
 
-proc respondMessage(b: var ABackend;
+proc respondMessage(b: ptr ABackend;
                     pool: TaskPool;
-                    performanceFut: var Future[void];
-                   ) {.async.} =
-
-  await b.sendFromB(try: await readMessage(b, pool, performanceFut)
-                    except CatchableError as e: e.msg)
+                    performanceFut: ptr Future[void];
+                   ): Future[bool] {.async.} =
+  let msg = try: await readMessage(b, pool, performanceFut)
+            except ValueError as e:
+              let j = newJObject()
+              j["error"] = % e.msg
+              $j
+  await respondMessage(b, msg)
 
 proc backendThread(b: ptr Backend) {.thread.} =
 
@@ -246,17 +262,7 @@ proc backendThread(b: ptr Backend) {.thread.} =
 
 
   while true:
-    waitFor(respondMessage(ab, pool, performanceFut))
-
-
-
-
-
-
-
-
-
-
+    discard waitFor(respondMessage(ab.addr, pool, performanceFut.addr))
 
 
 
@@ -270,8 +276,18 @@ pointerList(Instrument)
 pointerList(Performer)
 
 viewable App:
-  b: Backend
-  svgcache: Table[Performer, Table[TaskSnippet, Pixbuf]]
+  b: ptr Backend
+  performers {.private.}: ref HashSet[PerformerJson]
+  svgcache {.private.}: Table[string, Pixbuf]
+  curpaths {.private.}: seq[string]
+  synchronizing {.private.}: bool
+  performing {.private.}: bool
+  tempo {.private.}: string
+  timeSig {.private.}: string
+
+  hooks performers:
+    build:
+      new(state.performers)
 
 
 method view(app: AppState): Widget =
@@ -291,12 +307,11 @@ method view(app: AppState): Widget =
             spacing = padding
 
             # children will be Pictures
-            for performer in app.pool.performers:
-              if not performer.performing.isNil:
-                Picture {.expand: false, hAlign: AlignStart, vAlign: AlignStart.}:
-                  pixbuf = app.svgcache[performer][performer.performing.snippet]
-                  contentFit = ContentCover
-                  # sizeRequest = (-1, 150)
+            for p in app.curpaths:
+              Picture {.expand: false, hAlign: AlignStart, vAlign: AlignStart.}:
+                pixbuf = app.svgcache[p]
+                contentFit = ContentCover
+                # sizeRequest = (-1, 150)
 
 
         ScrolledWindow:
@@ -308,32 +323,13 @@ method view(app: AppState): Widget =
             # TODO: display of current tasks/performers/etc. here
             # TODO: ContextMenu
 
-            TaskSnippetList:
-              pool = app.pool
+            TaskSnippetList()
 
-              proc delete(x: TaskSnippet) =
-                for t in app.pool.tasks.items:
-                  if t.snippet == x:
-                    app.pool.tasks.excl(t)
-                app.pool.resync.excl(x)
-                for snippetcache in app.svgcache.mvalues:
-                  snippetcache.del(x)
+            TaskList()
 
-            TaskList:
-              pool = app.pool
+            InstrumentList()
 
-            InstrumentList:
-              pool = app.pool
-              proc delete(x: Instrument) =
-                for p in app.pool.performers.items:
-                  if p.instrument == x:
-                    app.pool.performers.excl(p)
-                    app.svgcache.del(p)
-
-            PerformerList:
-              pool = app.pool
-              proc delete(x: Performer) =
-                app.svgcache.del(x)
+            PerformerList()
 
             Separator() {.expand: false.}
 
@@ -343,48 +339,41 @@ method view(app: AppState): Widget =
 
               Entry:
                 placeholder = r"Tempo (denominator = bpm)"
-                sensitive = not (app.pool.synchronizing or app.pool.performances.len > 0)
+                sensitive = not (app.synchronizing or app.performing)
 
                 proc changed(text: string) = 
-                  app.pool.resyncAll = true
-                  app.pool.tempo = text
+                  app.tempo = text
 
               Entry:
                 placeholder = r"Time Signature (numerator/denominator)"
-                sensitive = not (app.pool.synchronizing or app.pool.performances.len > 0)
+                sensitive = not (app.synchronizing or app.performing)
 
                 proc changed(text: string) = 
-                  app.pool.resyncAll = true
-                  app.pool.timeSig = text
+                  app.timeSig = text
 
             Separator() {.expand: false.}
 
             # Start/stop button that resyncs before starting if necessary
             Button:
-              text = case app.pool.performances.len.bool.uint shl 1 or app.pool.synchronizing.uint:
-                     of 0b00: (if app.pool.resyncAll or
-                                  app.pool.resync.len > 0: "Synchronize then Perform!"
-                               else: "Perform!"
-                              )
+              text = case app.performing.uint shl 1 or app.synchronizing.uint:
+                     of 0b00: "Perform!"
                      of 0b01: "Synchronizing..."
-                     of 0b10:  "Cancel"
-                     of 0b11:  "Cancelling..."
+                     of 0b10: "Cancel"
+                     of 0b11: "Cancelling..."
                      else: raiseAssert ""
-              sensitive = not app.pool.synchronizing and
-                              app.pool.tasksnippets.len > 0 and
-                              app.pool.performers.len > 0 and
-                              app.pool.initialPool.len > 0
+              sensitive = not app.synchronizing
               style = [ButtonSuggested]
 
               proc clicked() =
-                defer:
-                  app.pool.synchronizing = false
-                if app.pool.performances.len > 0:
-                  app.pool.synchronizing = true
+                app.synchronizing = true
+                defer: app.synchronizing = false
+
+                if app.performing:
                   echo "stopping performance"
-                  waitFor app.pool.endPerformance()
-                  app.pool.synchronizing = false
+                  discard sendToB(app.b[], "stop")
+                  discard waitSync(app.b[])
                 else:
+                  #[
                   if app.pool.resyncAll or app.pool.resync.len > 0:
                     app.pool.synchronizing = true
 
@@ -418,17 +407,22 @@ method view(app: AppState): Widget =
 
                     if app.pool.resync.len > 0:
                       return
+                  ]#
 
-                  proc afterPop() =
-                    # try:
-                    #   discard app.redraw()
-                    # except:
-                    #   discard
-                    discard
+                  discard sendToB(app.b[], "setTempo", %app.tempo)
+                  discard waitSync(app.b[])
+                  discard sendToB(app.b[], "setTimeSig", %app.timeSig)
+                  discard waitSync(app.b[])
+                  discard sendToB(app.b[], "start")
+                  discard waitSync(app.b[])
+                  let j = popJson(app.b[], app.b.fromBData)
+                  app.svgcache.clear()
+                  for path in j.elems:
+                    app.svgcache[path.str] = loadPixbuf(path.str)
+                  discard fireSync(app.b[])
+                  discard waitSync(app.b[])
 
-                  # start performance
-                  echo "starting performance"
-                  waitFor app.pool.startPerformance(player, playerParams, afterPop)
+                  echo "playing now"
 
 
 
@@ -442,13 +436,12 @@ proc main =
   putEnv("GTK_THEME", "Default")
 
   let backend = createShared(Backend)
-  backend.toB = ThreadSignalPtr.new.expect("free file descriptor for signal")
-  backend.fromB = ThreadSignalPtr.new.expect("free file descriptor for signal")
+  backend.signal = ThreadSignalPtr.new.expect("free file descriptor for signal")
   var thread: Thread[ptr Backend]
 
   createThread(thread, backendThread, backend)
 
-  brew(gui(App(pool=pool)))
+  brew(gui(App(b=backend)))
 
 when isMainModule:
   main()
