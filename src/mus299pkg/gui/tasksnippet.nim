@@ -69,12 +69,6 @@ method view(editor: TaskSnippetEditorState): Widget =
         proc select(item: int) =
           editor.selectedPrefixInd = item
 
-      Entry {.x: 1, y: 2.}:
-        text = editor.tasksnippet.key
-
-        proc changed(text: string) =
-          editor.tasksnippet.key = text
-
       Button {.x: 1, y: 4.}:
         text = if editor.original.isNil: "Create" else: "Update"
         style = [ButtonSuggested]
