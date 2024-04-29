@@ -1,3 +1,6 @@
+# Sophia's Shop - Persona 5 Scramble OST
+# Based on musescore.com/user/7549496/scores/7001448
+
 import mus299pkg/[core, task, pool, performer]
 import std/appdirs
 import std/re
