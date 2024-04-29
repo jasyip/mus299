@@ -4,10 +4,11 @@ from std/sequtils import toSeq
 from std/strutils import strip
 from std/sets import items, contains, incl, excl, len
 
-import owlkettle
+import ../../owlkettle/owlkettle
 
 import ../core
 import ../task
+import ../pool
 
 viewable TaskEditor:
   pool: TaskPool
@@ -187,6 +188,15 @@ method view(editor: TaskEditorState): Widget =
             editor.pool.initialPool.incl(editor.task)
           else:
             editor.pool.initialPool.excl(editor.task)
+          if editor.pool.performances.len > 0:
+            block addRunning:
+              if not editor.addToPool:
+                if editor.task.depends.len == 0:
+                  break addRunning
+                for i in editor.task.depends:
+                  if i.readyDepends != -1:
+                    break addRunning
+              editor.pool.addTask(editor.task)
 
           editor.respond(DialogResponse(kind: DialogAccept))
 

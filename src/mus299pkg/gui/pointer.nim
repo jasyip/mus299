@@ -1,7 +1,7 @@
 import std/macros
 import std/strutils
 
-import owlkettle
+import ../../owlkettle/owlkettle
 
 type EditDialogMode* = enum
   Add

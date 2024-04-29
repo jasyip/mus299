@@ -24,13 +24,14 @@ type
   TaskObj* = object
     snippet*: TaskSnippet
     depends*, dependents*: HashSet[Task]
-    readyDepends*: uint = 0
+    readyDepends* = 0
     allowedCategories*: HashSet[Category]
   TaskSnippetObj* = object
     path*: Path
     snippet*, name*: string
     key* = "c"
     staffPrefix* = ""
+    channel* = 0u
 
   Performer* = ref PerformerObj
   # Duplicate performers are their own object
@@ -97,12 +98,13 @@ proc normalizeName*(x: Category | string, nameRe: Regex): string =
     raise ValueError.newException("Given name is unacceptable")
   return stripped
 
-proc `=destroy`*(x: TaskSnippetObj) =
-  if x.path.string.len > 0:
-    try:
-      removeDir(x.path)
-    except OSError:
-      discard
-
-  for f in x.fields:
-    `=destroy`(f.addr[])
+when defined(release):
+  proc `=destroy`*(x: TaskSnippetObj) =
+    if x.path.string.len > 0:
+      try:
+        removeDir(x.path)
+      except OSError:
+        discard
+  
+    for f in x.fields:
+      `=destroy`(f.addr[])

@@ -1,8 +1,7 @@
-when defined(release):
-  --define:danger
-else:
+when defined(debug):
   --debugger:native
   --define:chronosDebug
 
 --define:nimPreviewHashRef
---define:useRealtimeGC
+# --define:nimNoLentIterators
+# switch("define", "asyncBackend=asyncdispatch")

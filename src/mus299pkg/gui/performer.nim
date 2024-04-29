@@ -4,7 +4,7 @@ import std/sets
 from std/sugar import collect
 import std/enumerate
 
-import owlkettle
+import ../../owlkettle/owlkettle
 
 import ../core
 

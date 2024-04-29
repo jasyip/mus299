@@ -8,10 +8,12 @@ import std/enumerate
 import std/strformat
 import std/envvars
 import std/tables
+import std/strutils
+import std/hashes
 
 import results
 import chronos
-import owlkettle
+import owlkettle/owlkettle
 
 
 
@@ -38,6 +40,7 @@ pointerList(Performer)
 viewable App:
   pool: TaskPool
   svgcache: Table[Performer, Table[TaskSnippet, Pixbuf]]
+
 
 
 method view(app: AppState): Widget =
@@ -147,7 +150,6 @@ method view(app: AppState): Widget =
                   app.pool.synchronizing = false
                 if app.pool.performances.len > 0:
                   app.pool.synchronizing = true
-                  echo "stopping performance"
                   waitFor app.pool.endPerformance()
                   app.pool.synchronizing = false
                 else:
@@ -161,46 +163,44 @@ method view(app: AppState): Widget =
                       app.pool.resync.incl(app.pool.tasksnippets)
                     let
                       snippets = toSeq(app.pool.resync)
-                      futures = mapIt(snippets, it.resyncTaskSnippet(app.pool))
+                      futures = mapIt(snippets, it.resyncTaskSnippet(app.pool, 10.seconds))
 
                     futures.allFutures.waitFor()
                     for i, future in enumerate(futures):
                       future.read.isOkOr:
-                        discard app.open: gui:
-                          MessageDialog:
-                            message = &"Error synchronizing task snippet \"{snippets[i].name}\":\p" & error
+                        try:
+                          discard app.open: gui:
+                            MessageDialog:
+                              message = &"Error synchronizing task snippet \"{snippets[i].name}\":\p" & error
 
-                            DialogButton {.addButton.}:
-                              text = "Ok"
-                              res = DialogAccept
+                              DialogButton {.addButton.}:
+                                text = "Ok"
+                                res = DialogAccept
+                        except Exception:
+                          discard
                         continue
                       for (performer, snippetcache) in app.svgcache.mpairs:
                         if (performer.instrument.staffPrefix == "Drum") != (snippets[i].staffPrefix == "Drum"):
                           snippetcache.del(snippets[i])
                           continue
-                        snippetcache[snippets[i]] = loadPixbuf(string(snippets[i].path / Path("source-" & performer.name & ".cropped.svg")), width = -1, height = 150, preserveAspectRatio = true)
+                        snippetcache[snippets[i]] = loadPixbuf(string(snippets[i].path / Path("source-" & performer.name.hash.toHex() & ".cropped.svg")), width = -1, height = 150, preserveAspectRatio = true)
                       app.pool.resync.excl(snippets[i])
                     app.pool.resyncAll = false
 
                     if app.pool.resync.len > 0:
                       return
 
-                  proc afterPop() =
-                    # try:
-                    #   discard app.redraw()
-                    # except:
-                    #   discard
-                    discard
-
-                  # start performance
-                  echo "starting performance"
-                  asyncSpawn app.pool.startPerformance(player, playerParams, afterPop)
+                  proc afterPop(_: Task) =
+                    try:
+                      discard app.redraw()
+                    except Exception:
+                      discard
+                  asyncSpawn app.pool.startPerformance(player, playerParams, nil, afterPop)
 
 
 
-proc main =
+proc main {.async.} =
 
-  randomize()
 
   # TODO: GC_fullCollect then GC_disable right before playing, GC_enable after
   # GC_step whenevever the one and only task from pool is popped for 5 microsecs
@@ -215,7 +215,12 @@ proc main =
 
   putEnv("GTK_THEME", "Default")
 
-  brew(gui(App(pool=pool)))
+  try:
+    await brew(gui(App(pool=pool)))
+  except Exception:
+    discard
 
 when isMainModule:
-  main()
+  randomize()
+
+  waitFor main()

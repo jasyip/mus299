@@ -1,6 +1,6 @@
 import std/sequtils
 
-import owlkettle
+import ../../owlkettle/owlkettle
 
 import ../core
 import ../performer

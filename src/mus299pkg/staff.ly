@@ -1,5 +1,5 @@
 \book {
-  \bookOutputSuffix "$instrumentName"
+  \bookOutputSuffix "$outputSuffix"
   \score {
     \new ${staffPrefix}Staff \with {
       instrumentName = #"$instrumentName"
@@ -11,6 +11,14 @@
     }
     \midi {
       $tempo
+      \context {
+        \Staff
+        \remove "Staff_performer"
+      }
+      \context {
+        \Voice
+        \consists "Staff_performer"
+      }
     }
     \layout {
       ragged-right = ##t

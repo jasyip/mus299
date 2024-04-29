@@ -4,6 +4,7 @@ import std/sets
 import std/re
 import std/streams
 import std/sequtils
+import std/hashes
 from std/math import almostEqual
 
 import chronos
@@ -16,33 +17,40 @@ import performer
 
 const staffPrefixesSet = toHashSet(staffPrefixes)
 
-proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool): Future[Result[void, string]] {.async.} =
+proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool; timeout = InfiniteDuration): Future[Result[void, string]] {.async.} =
 
   block:
-    let file = openFileStream(string(snippet.path / "source.ly".Path), fmWrite)
+    let
+      file = openFileStream(string(snippet.path / "source.ly".Path), fmWrite)
+      snip = block:
+        let d = snippet.snippet.dedent
+        if "\p" in d: d.indent(9) else: d
     defer: file.close()
     file.write(pool.sourceTemplate)
   
     file.write:
       # assume that snippet is already whitespace-stripped
-      if "\p" in snippet.snippet:
-        snippet.snippet
-      else:
-        var matches: array[1, string]
-        if contains(snippet.snippet, pool.isAssignment, matches):
-          if matches[0] != pool.varName:
-            pool.varName & snippet.snippet[matches[0].len .. ^1]
-          else:
-            raise ValueError.newException("Unparseable")
+      var matches: array[1, string]
+      if contains(snip, pool.isAssignment, matches):
+        if matches[0] != pool.varName:
+          pool.varName & snip[matches[0].len .. ^1]
         else:
-          pool.varName & " = " & (if contains(snippet.snippet, pool.isExpression): snippet.snippet
-                             else: (if snippet.staffPrefix == "Drum": r"\drums "
-                                    else: "") & "{" & snippet.snippet & "}")
-  
-    let taskExpr = (if pool.timeSig == "": ""
-                    else: r"\time " & pool.timeSig & " "
-                   ) & r"\task"
-  
+          raise ValueError.newException("Unparseable")
+      else:
+        pool.varName & " = " & (if contains(snip, pool.isExpression): snip
+                           else: (if snippet.staffPrefix == "Drum": r"\drums "
+                                  else: "") & "{" & snip & "}")
+
+    const largeInd = "\p" & repeat(' ', 6)
+    var taskPrefix, taskSuffix: string
+    if pool.timeSig != "":
+      taskPrefix.add(r"\time " & pool.timeSig & largeInd)
+    if snippet.staffPrefix != "Drum" and snippet.channel > 0:
+      taskPrefix.add("<<" & largeInd)
+      taskPrefix.add(repeat(r"\new Voice { s256 }" & largeInd, snippet.channel + uint(snippet.channel > 8)))
+      taskPrefix.add(r"\new Voice {" & largeInd)
+      taskSuffix.insert("} >> ")
+
     for i, performer in pool.performers.pairs:
       if (performer.instrument.staffPrefix == "Drum") != (snippet.staffPrefix == "Drum"):
         continue
@@ -50,34 +58,38 @@ proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool): Future[Result[voi
       file.write("\p")
       if i > 0:
         file.write("\p")
+
   
-      const newLine = "\p" & repeat(' ', 6)
-  
-      var propertiesExpr, specificTaskExpr = ""
+      var
+        propertiesExpr: string
+        specificTaskPrefix = taskPrefix
+        specificTaskSuffix = taskSuffix
   
       if not almostEqual(performer.minVolume, 0.0):
         propertiesExpr.add("midiMinimumVolume = #" &
                            formatFloat(performer.minVolume, ffDecimal, 2) &
-                           newLine
+                           largeInd
                           )
       if not almostEqual(performer.maxVolume, 1.0):
         propertiesExpr.add("midiMaximumVolume = #" &
                            formatFloat(performer.maxVolume, ffDecimal, 2) &
-                           newLine
+                           largeInd
                           )
   
       if performer.clef != "":
-        specificTaskExpr.add(r"\clef " & performer.clef & newLine)
+        specificTaskPrefix.add(r"\clef " & performer.clef & largeInd)
       if snippet.staffPrefix != "Drum" and performer.key != "":
-        specificTaskExpr.add(r"\key " & performer.key & newLine)
-        specificTaskExpr.add(r"\transpose " & snippet.key & " " & transposeKey(performer[]) & " ")
+        specificTaskPrefix.add(r"\transpose " & snippet.key & " " & transposeKey(performer[]) & " {" & largeInd)
+        specificTaskSuffix.insert("} ")
+        specificTaskPrefix.add(r"\key " & performer.key.multiReplace(("'", ""), (",", "")) & largeInd)
       file.write(format($pool.staffTemplate,
+        "outputSuffix", performer.name.hash.toHex(),
         "instrumentName", performer.name,
         "midiInstrument", performer.instrument.name,
         "staffPrefix", snippet.staffPrefix,
         "tempo", (if pool.tempo == "": "" else: r"\tempo " & pool.tempo),
         "properties", propertiesExpr,
-        "task", specificTaskExpr & taskExpr,
+        "task", specificTaskPrefix & r"\task " & specificTaskSuffix,
       ))
 
   const args = @["-lERROR", "--svg", "-dno-print-pages", "-dcrop", "source.ly"]
@@ -87,12 +99,13 @@ proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool): Future[Result[voi
                              options = {UsePath},
                              stderrHandle = AsyncProcess.Pipe,
                             )
+  echo "lilypond pid " & $p.pid & " @ " & snippet.path.string & " for snippet " & snippet.name
   let (code, msg) = try:
     let
       stderrFut = p.stderrStream.read()
       codeFut = p.waitForExit()
 
-    if not await codeFut.withTimeout(3.seconds):
+    if not await codeFut.withTimeout(timeout):
       codeFut.cancelSoon()
       return err("lilypond process took too long or the infamous bug with chronos that can't reap zombies properly is occuring")
     (codeFut.read(), string.fromBytes(await stderrFut))
@@ -105,10 +118,10 @@ proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool): Future[Result[voi
     err(msg)
 
 
-proc newTaskSnippet*(pool: TaskPool; snippet: string; name = ""; key = "c"; staffPrefix = ""): Future[Result[TaskSnippet, string]] {.async.} =
+proc newTaskSnippet*(pool: TaskPool; snippet: string; name = ""; key = "c"; staffPrefix = ""; channel = 0u): Future[Result[TaskSnippet, string]] {.async.} =
   if staffPrefix notin staffPrefixesSet:
     raise ValueError.newException("unsupported staff prefix")
-  let snippet = TaskSnippet(path: createTempDir("mus299-", "").Path, snippet: snippet, name: name, key: key, staffPrefix: staffPrefix)
+  let snippet = TaskSnippet(path: createTempDir("mus299-", "").Path, snippet: snippet, name: name, key: key, staffPrefix: staffPrefix, channel: channel)
   (await resyncTaskSnippet(snippet, pool)) and ok(snippet)
 
 

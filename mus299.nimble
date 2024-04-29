@@ -33,4 +33,4 @@ installFiles = collect:
 
 requires "nim ^= 2.0.0"
 requires "chronos ^= 4.0.0"
-requires "owlkettle ^= 3.0.0"
+# requires "file:///home/lj/projects/uiuc/2024-spring/mus299/owlkettle"

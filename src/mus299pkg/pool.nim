@@ -3,6 +3,8 @@ import std/random
 from std/sugar import collect
 import std/enumerate
 import std/sequtils
+import std/strutils
+import std/hashes
 
 import chronos
 import chronos/asyncproc
@@ -56,8 +58,6 @@ proc wakeupNext(pool: TaskPool; categories: HashSet[Category]) {.raises: [].} =
 
 
 proc addTask*(pool: TaskPool; task: Task) =
-  echo "Adding task ", hexAddr(task)
-  task.readyDepends = task.depends.len.uint
   for category in task.allowedCategories.items:
     pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
   pool.wakeupNext(task.allowedCategories)
@@ -70,9 +70,11 @@ proc popTask*(pool: TaskPool;
   proc reincarnate =
     pool.toReincarnate.withValue(performer, entry):
       for t in entry[].dependents.items:
-        t.readyDepends.inc
+        if t.readyDepends >= 0:
+          t.readyDepends.inc
         if t.readyDepends == t.depends.len.uint:
           pool.addTask(t)
+      entry[].readyDepends = -1
       pool.toReincarnate.del(performer)
 
 
@@ -120,14 +122,14 @@ proc perform(performer: Performer; pool: TaskPool;
     defer:
       if not beforePop.isNil:
         await beforePop()
-    let task = await pool.popTask(performer.categories, performer)
-    echo "performer ", performer.name, " has task ", hexAddr(task)
+    performer.performing = await pool.popTask(performer.categories, performer)
+    defer: performer.performing = nil
     if not afterPop.isNil:
-      await afterPop(task)
+      await afterPop(performer.performing)
 
-    let playerProc = await startProcess(player, task.snippet.path.string,
+    let playerProc = await startProcess(player, performer.performing.snippet.path.string,
                                         concat(playerParams,
-                                               @["source-" & performer.name & ".midi"]
+                                               @["source-" & performer.name.hash.toHex() & ".midi"]
                                               ),
                                         options = {UsePath}
                                        )
@@ -146,7 +148,7 @@ proc startPerformance*(pool: TaskPool;
     pool.performances.add(performer.perform(pool, player, playerParams, beforePop, afterPop))
 
   for task in pool.initialPool:
-    task.readyDepends = task.depends.len.uint
+    task.readyDepends = -1
     for category in task.allowedCategories.items:
       pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
 
@@ -155,7 +157,7 @@ proc startPerformance*(pool: TaskPool;
 
   await allFutures(pool.performances)
 
-proc startPerformance*(performer: Performer; pool: TaskPool;
+proc startPerformance*(pool: TaskPool;
                        player: string; playerParams: seq[string];
                        beforePop: proc() {.gcsafe, raises: [].};
                        afterPop: proc(_: Task) {.gcsafe, raises: [].} = nil;
@@ -167,13 +169,7 @@ proc startPerformance*(performer: Performer; pool: TaskPool;
     ap = if afterPop.isNil: nil
          else:
            proc(x: Task) {.async.} = afterPop(x)
-  await perform(performer,
-                pool,
-                player,
-                playerParams,
-                bp,
-                ap
-               )
+  await startPerformance(pool, player, playerParams, bp, ap)
 
 
 
@@ -183,6 +179,8 @@ proc endPerformance*(pool: TaskPool) {.async.} =
 
   try:
     await allFutures(pool.performances)
+  except CancelledError:
+    discard
   finally:
     pool.performances = @[]
     pool.getters.clear()
