@@ -210,7 +210,7 @@ method view(editor: PerformerEditorState): Widget =
                                 else:
                                   round(editor.channelFloat)
 
-          if editor.performer.instrument.staffPrefix != "Drum" and not almostEqual(editor.channelFloat, 9.0):
+          if editor.performer.instrument.staffPrefix != "Drum" and almostEqual(editor.channelFloat, 9.0):
             discard editor.open: gui:
               MessageDialog:
                 message = "(0-based) MIDI channel # cannot be 9"

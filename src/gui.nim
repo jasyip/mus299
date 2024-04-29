@@ -163,7 +163,7 @@ method view(app: AppState): Widget =
                       app.pool.resync.incl(app.pool.tasksnippets)
                     let
                       snippets = toSeq(app.pool.resync)
-                      futures = mapIt(snippets, it.resyncTaskSnippet(app.pool, 10.seconds))
+                      futures = mapIt(snippets, it.resyncTaskSnippet(app.pool, 4.seconds))
 
                     futures.allFutures.waitFor()
                     for i, future in enumerate(futures):
