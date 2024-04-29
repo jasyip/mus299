@@ -197,6 +197,7 @@ method view(editor: TaskEditorState): Widget =
                   if i.readyDepends != -1:
                     break addRunning
               editor.pool.addTask(editor.task)
+              editor.pool.wakeupNext(editor.task.allowedCategories)
 
           editor.respond(DialogResponse(kind: DialogAccept))
 

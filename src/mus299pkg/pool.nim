@@ -5,7 +5,6 @@ import std/enumerate
 import std/sequtils
 import std/strutils
 import std/hashes
-import std/options
 
 import chronos
 import chronos/asyncproc
@@ -28,104 +27,82 @@ proc randomItem[T](pool: var Table[Category, HashSet[T]];
     if i == chosen:
       return item
 
-proc scan[T](pool: var Table[Category, HashSet[T]];
-             categories: HashSet[Category];
-             delete: proc(x: T): bool {.noSideEffect, raises: [].} = nil;
-             addOnReady: proc() {.raises: [].} = nil;
-            ): Option[T] {.raises: [].} =
+
+proc wakeupNext*(pool: TaskPool; categories: HashSet[Category]) {.raises: [].} =
   for category in categories.items:
-    pool.withValue(category, entry):
-      if not delete.isNil():
-        let toDelete = collect:
-          for item in entry[].items:
-            if delete(item):
-              item
-        for item in toDelete:
-          entry[].excl(item)
-        if entry[].len == 0:
-          pool.del(category)
-          continue
+    pool.getters.withValue(category, entry):
+      let toDelete = collect:
+        for item in entry[].items:
+          if item.finished():
+            item
+      for item in toDelete:
+        entry[].excl(item)
 
       if entry[].len > 0:
-        if not addOnReady.isNil():
-          {.cast(gcsafe).}:
-            addOnReady()
-        return some(randomItem(pool, categories))
-
-  none(T)
-
-proc scan[T](pool: var Table[Category, HashSet[T]];
-             categories: HashSet[Category];
-             addOnReady: proc() {.raises: [].}
-            ): Option[T] {.raises: [].} =
-  scan(pool, categories, nil, addOnReady)
-
-
-
-proc wakeupNext(pool: TaskPool; categories: HashSet[Category]) {.raises: [].} =
-  let poppedFuture = scan(pool.getters, categories) do (x: Future[void].Raising([CancelledError])) -> bool:
-                                                       x.finished()
-  if poppedFuture.isSome():
-    poppedFuture.unsafeGet.complete()
+        randomItem(pool.getters, categories).complete()
+        return
+      pool.getters.del(category)
 
 
 proc addTask*(pool: TaskPool; task: Task) =
   task.readyDepends = -3
   for category in task.allowedCategories.items:
     pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
-  pool.wakeupNext(task.allowedCategories)
 
 proc popTask*(pool: TaskPool;
               categories: HashSet[Category];
               performer: Performer
              ): Future[Task] {.async: (raises: [CancelledError]).} =
 
-  proc reincarnate =
+  proc reincarnate: HashSet[Task] =
     pool.toReincarnate.withValue(performer, entry):
       for t in entry[].dependents.items:
         if t.readyDepends >= 0:
           t.readyDepends.inc
           if t.readyDepends == t.depends.len.uint:
+            result.incl(t)
             pool.addTask(t)
       entry[].readyDepends.inc
       pool.toReincarnate.del(performer)
 
 
-  while true:
+  block waitLoop:
+    while true:
 
-    let scanResult = scan(pool.pool, categories, reincarnate)
+      for category in categories.items:
+        pool.pool.withValue(category, entry):
+          if entry[].len > 0:
+            let toReincarnate = reincarnate()
+            result = randomItem(pool.pool, categories)
+            for cat in result.allowedCategories:
+              var empty: bool
+              pool.pool.withValue(cat, entry2):
+                entry2[].excl(result)
+                empty = entry2[].len == 0
+              if empty:
+                pool.pool.del(category)
+            for task in toReincarnate:
+              pool.wakeupNext(task.allowedCategories)
+            break waitLoop
+          pool.pool.del(category)
 
-    if scanResult.isSome:
-      result = scanResult.unsafeGet()
-      break
+      let getter = Future[void].Raising([CancelledError]).init("TaskPool.popTask")
+      for category in categories.items:
+        pool.getters.mgetOrPut(category,
+                               HashSet[Future[void].Raising([CancelledError])].default
+                              ).incl(getter)
 
-    let getter = Future[void].Raising([CancelledError]).init("TaskPool.popTask")
-    for category in categories.items:
-      pool.getters.mgetOrPut(category,
-                             HashSet[Future[void].Raising([CancelledError])].default
-                            ).incl(getter)
+      for task in reincarnate():
+        pool.wakeupNext(task.allowedCategories)
 
-    reincarnate()
+      try:
+        await getter
+      except CancelledError as exc:
+        if not getter.cancelled():
+          pool.wakeupNext(categories)
+        raise exc
 
-    try:
-      await getter
-    except CancelledError as exc:
-      if not getter.cancelled():
-        pool.wakeupNext(categories)
-      raise exc
-
-  for category in result.allowedCategories:
-    var taskSet: ptr HashSet[Task]
-    try:
-      taskSet = pool.pool[category].addr
-    except KeyError:
-      raiseAssert getCurrentExceptionMsg()
-    if taskSet[].len == 1:
-      pool.pool.del(category)
-    else:
-      taskSet[].excl(result)
-
-  pool.toReincarnate[performer] = result
+    pool.toReincarnate[performer] = result
 
 
 
@@ -165,9 +142,7 @@ proc startPerformance*(pool: TaskPool;
     pool.performances.add(performer.perform(pool, player, playerParams, beforePop, afterPop))
 
   for task in pool.initialPool:
-    task.readyDepends = -3
-    for category in task.allowedCategories.items:
-      pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
+    pool.addTask(task)
 
   for task in pool.initialPool:
     pool.wakeupNext(task.allowedCategories)
