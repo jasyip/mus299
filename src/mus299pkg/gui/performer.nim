@@ -3,6 +3,7 @@ from std/strbasics import strip
 import std/sets
 from std/sugar import collect
 import std/enumerate
+import std/math
 
 import ../../owlkettle/owlkettle
 
@@ -20,6 +21,7 @@ viewable PerformerEditor:
   instrumentNames {.private.}: seq[string]
   curCategory {.private.}: string
   invalidCategoryLabel {.private.}: string
+  channelFloat {.private.}: float
 
   hooks instruments:
     build:
@@ -157,6 +159,20 @@ method view(editor: PerformerEditorState): Widget =
           proc changed(text: string) =
             editor.performer.clef = text
 
+        Label {.x: 0, y: 7.}:
+          text = "MIDI Channel"
+          xAlign = 0 # Align left
+  
+        SpinButton {.x: 1, y: 7.}:
+          digits = 0
+          value = editor.channelFloat
+          max = 15.0
+          wrap = true
+          stepIncrement = 1.0
+  
+          proc valueChanged(value: float) =
+            editor.channelFloat = value
+
       Label:
         text = editor.invalidCategoryLabel
 
@@ -188,6 +204,23 @@ method view(editor: PerformerEditorState): Widget =
                   text = "Ok"
                   res = DialogAccept
             return
+
+          editor.channelFloat = if editor.performer.instrument.staffPrefix == "Drum":
+                                  9.0
+                                else:
+                                  round(editor.channelFloat)
+
+          if editor.performer.instrument.staffPrefix != "Drum" and not almostEqual(editor.channelFloat, 9.0):
+            discard editor.open: gui:
+              MessageDialog:
+                message = "(0-based) MIDI channel # cannot be 9"
+
+                DialogButton {.addButton.}:
+                  text = "Ok"
+                  res = DialogAccept
+            return
+          editor.performer.channel = cast[uint](editor.channelFloat)
+
 
           try:
             editor.performer.name = normalizeName(editor.performer.name, editor.pool.nameRe)

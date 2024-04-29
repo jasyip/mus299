@@ -31,7 +31,6 @@ type
     snippet*, name*: string
     key* = "c"
     staffPrefix* = ""
-    channel* = 0u
 
   Performer* = ref PerformerObj
   # Duplicate performers are their own object
@@ -46,6 +45,7 @@ type
     minVolume* = 0.0
     maxVolume* = 1.0
     key*, clef* = ""
+    channel* = 0u
 
   Instrument* = ref InstrumentObj
   InstrumentObj = object

@@ -5,34 +5,13 @@ import std/enumerate
 import std/sequtils
 import std/strutils
 import std/hashes
+import std/options
 
 import chronos
 import chronos/asyncproc
 
 import core
 
-
-func wouldWait[T](pool: var Table[Category, HashSet[T]];
-                  categories: HashSet[Category];
-                  delete: proc(x: T): bool {.noSideEffect, raises: [].} = nil
-                 ): bool {.raises: [].} =
-  for category in categories.items:
-    pool.withValue(category, entry):
-      if not delete.isNil():
-        let toDelete = collect:
-          for item in entry[].items:
-            if delete(item):
-              item
-        for item in toDelete:
-          entry[].excl(item)
-        if entry[].len == 0:
-          pool.del(category)
-          continue
-
-      if entry[].len > 0:
-        return false
-
-  true
 
 
 proc randomItem[T](pool: var Table[Category, HashSet[T]];
@@ -49,15 +28,49 @@ proc randomItem[T](pool: var Table[Category, HashSet[T]];
     if i == chosen:
       return item
 
+proc scan[T](pool: var Table[Category, HashSet[T]];
+             categories: HashSet[Category];
+             delete: proc(x: T): bool {.noSideEffect, raises: [].} = nil;
+             addOnReady: proc() {.raises: [].} = nil;
+            ): Option[T] {.raises: [].} =
+  for category in categories.items:
+    pool.withValue(category, entry):
+      if not delete.isNil():
+        let toDelete = collect:
+          for item in entry[].items:
+            if delete(item):
+              item
+        for item in toDelete:
+          entry[].excl(item)
+        if entry[].len == 0:
+          pool.del(category)
+          continue
+
+      if entry[].len > 0:
+        if not addOnReady.isNil():
+          {.cast(gcsafe).}:
+            addOnReady()
+        return some(randomItem(pool, categories))
+
+  none(T)
+
+proc scan[T](pool: var Table[Category, HashSet[T]];
+             categories: HashSet[Category];
+             addOnReady: proc() {.raises: [].}
+            ): Option[T] {.raises: [].} =
+  scan(pool, categories, nil, addOnReady)
+
+
 
 proc wakeupNext(pool: TaskPool; categories: HashSet[Category]) {.raises: [].} =
-  if not (wouldWait(pool.getters, categories) do (x: Future[void].Raising([CancelledError])) -> bool:
-            x.finished()
-         ):
-    randomItem(pool.getters, categories).complete()
+  let poppedFuture = scan(pool.getters, categories) do (x: Future[void].Raising([CancelledError])) -> bool:
+                                                       x.finished()
+  if poppedFuture.isSome():
+    poppedFuture.unsafeGet.complete()
 
 
 proc addTask*(pool: TaskPool; task: Task) =
+  task.readyDepends = -3
   for category in task.allowedCategories.items:
     pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
   pool.wakeupNext(task.allowedCategories)
@@ -72,13 +85,19 @@ proc popTask*(pool: TaskPool;
       for t in entry[].dependents.items:
         if t.readyDepends >= 0:
           t.readyDepends.inc
-        if t.readyDepends == t.depends.len.uint:
-          pool.addTask(t)
-      entry[].readyDepends = -1
+          if t.readyDepends == t.depends.len.uint:
+            pool.addTask(t)
+      entry[].readyDepends.inc
       pool.toReincarnate.del(performer)
 
 
-  if wouldWait(pool.pool, categories):
+  while true:
+
+    let scanResult = scan(pool.pool, categories, reincarnate)
+
+    if scanResult.isSome:
+      result = scanResult.unsafeGet()
+      break
 
     let getter = Future[void].Raising([CancelledError]).init("TaskPool.popTask")
     for category in categories.items:
@@ -94,10 +113,7 @@ proc popTask*(pool: TaskPool;
       if not getter.cancelled():
         pool.wakeupNext(categories)
       raise exc
-  else:
-    reincarnate()
 
-  result = randomItem(pool.pool, categories)
   for category in result.allowedCategories:
     var taskSet: ptr HashSet[Task]
     try:
@@ -137,6 +153,7 @@ proc perform(performer: Performer; pool: TaskPool;
     let code = await playerProc.waitForExit()
     if code != 0:
       raise AsyncProcessError.newException("MIDI player return code was " & $code)
+    performer.performing.readyDepends.inc
 
 
 proc startPerformance*(pool: TaskPool;
@@ -148,7 +165,7 @@ proc startPerformance*(pool: TaskPool;
     pool.performances.add(performer.perform(pool, player, playerParams, beforePop, afterPop))
 
   for task in pool.initialPool:
-    task.readyDepends = -1
+    task.readyDepends = -3
     for category in task.allowedCategories.items:
       pool.pool.mgetOrPut(category, HashSet[Task].default).incl(task)
 

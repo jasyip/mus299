@@ -45,11 +45,6 @@ proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool; timeout = Infinite
     var taskPrefix, taskSuffix: string
     if pool.timeSig != "":
       taskPrefix.add(r"\time " & pool.timeSig & largeInd)
-    if snippet.staffPrefix != "Drum" and snippet.channel > 0:
-      taskPrefix.add("<<" & largeInd)
-      taskPrefix.add(repeat(r"\new Voice { s256 }" & largeInd, snippet.channel + uint(snippet.channel > 8)))
-      taskPrefix.add(r"\new Voice {" & largeInd)
-      taskSuffix.insert("} >> ")
 
     for i, performer in pool.performers.pairs:
       if (performer.instrument.staffPrefix == "Drum") != (snippet.staffPrefix == "Drum"):
@@ -75,6 +70,11 @@ proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool; timeout = Infinite
                            formatFloat(performer.maxVolume, ffDecimal, 2) &
                            largeInd
                           )
+      if snippet.staffPrefix != "Drum" and performer.channel > 0:
+        specificTaskPrefix.add("<<" & largeInd)
+        specificTaskPrefix.add(repeat(r"\new Voice { s256 }" & largeInd, performer.channel + uint(performer.channel > 8)))
+        specificTaskPrefix.add(r"\new Voice {" & largeInd)
+        specificTaskSuffix.insert("} >> ")
   
       if performer.clef != "":
         specificTaskPrefix.add(r"\clef " & performer.clef & largeInd)
@@ -118,10 +118,10 @@ proc resyncTaskSnippet*(snippet: TaskSnippet; pool: TaskPool; timeout = Infinite
     err(msg)
 
 
-proc newTaskSnippet*(pool: TaskPool; snippet: string; name = ""; key = "c"; staffPrefix = ""; channel = 0u): Future[Result[TaskSnippet, string]] {.async.} =
+proc newTaskSnippet*(pool: TaskPool; snippet: string; name = ""; key = "c"; staffPrefix = ""): Future[Result[TaskSnippet, string]] {.async.} =
   if staffPrefix notin staffPrefixesSet:
     raise ValueError.newException("unsupported staff prefix")
-  let snippet = TaskSnippet(path: createTempDir("mus299-", "").Path, snippet: snippet, name: name, key: key, staffPrefix: staffPrefix, channel: channel)
+  let snippet = TaskSnippet(path: createTempDir("mus299-", "").Path, snippet: snippet, name: name, key: key, staffPrefix: staffPrefix)
   (await resyncTaskSnippet(snippet, pool)) and ok(snippet)
 
 
